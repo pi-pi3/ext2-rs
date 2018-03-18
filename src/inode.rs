@@ -1,5 +1,4 @@
 #[repr(C, packed)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Inode {
     /// Type and Permissions (see below)
     type_perm: u16,

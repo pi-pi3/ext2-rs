@@ -47,7 +47,6 @@ pub const OS_LITE: u32 = 4;
 /// 512 byte sectors, the Superblock will begin at LBA 2 and will occupy all of
 /// sector 2 and 3.
 #[repr(C, packed)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Superblock {
     // taken from https://wiki.osdev.org/Ext2
     /// Total number of inodes in file system
@@ -163,8 +162,8 @@ impl Superblock {
         }
 
         let superblock: &mut Superblock = unsafe {
-            let ptr =
-                haystack.as_ptr().offset(offset as isize) as *mut Superblock;
+            let ptr = haystack.as_mut_ptr().offset(offset as isize)
+                as *mut Superblock;
             ptr.as_mut().unwrap()
         };
 
@@ -190,7 +189,7 @@ impl Superblock {
         }
 
         let ptr = unsafe {
-            haystack.as_ptr().offset(offset as isize)
+            haystack.as_mut_ptr().offset(offset as isize)
                 as *mut BlockGroupDescriptor
         };
         let slice = unsafe { slice::from_raw_parts_mut(ptr, count) };
@@ -264,5 +263,26 @@ bitflags! {
         const RONLY_FILE_SIZE_64 = 0x0002;
         /// Directory contents are stored in the form of a Binary Tree
         const RONLY_BTREE_DIRECTORY = 0x0004;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find() {
+        let mut buffer = vec![0_u8; 4096];
+        let addr = &buffer[1024] as *const _ as usize;
+        // magic
+        buffer[1024 + 56] = EXT2_MAGIC as u8;
+        buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
+        let superblock = Superblock::find(&mut buffer);
+        assert!(
+            superblock.is_ok(),
+            "Err({:?})",
+            superblock.err().unwrap_or_else(|| unreachable!()),
+        );
+        assert_eq!(superblock.unwrap() as *const _ as usize, addr);
     }
 }

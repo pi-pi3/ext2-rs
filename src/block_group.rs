@@ -11,7 +11,6 @@
 /// Remember that blocks are numbered starting at 0, and that block numbers
 /// don't usually correspond to physical block addresses.
 #[repr(C, packed)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlockGroupDescriptor {
     /// Block address of block usage bitmap
     block_usage_addr: u32,
