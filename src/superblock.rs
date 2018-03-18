@@ -154,8 +154,9 @@ pub struct Superblock {
 impl Superblock {
     pub fn find<'a>(
         haystack: &'a mut [u8],
+        offset: isize,
     ) -> Result<&'a mut Superblock, Error> {
-        let offset = 1024;
+        let offset = (1024 + offset) as usize;
         let end = offset + mem::size_of::<Superblock>();
         if haystack.len() < end {
             return Err(Error::OutOfBounds(end));
@@ -177,12 +178,13 @@ impl Superblock {
     pub fn find_block_table<'a>(
         &self,
         haystack: &'a mut [u8],
+        offset: isize,
     ) -> Result<&'a mut [BlockGroupDescriptor], Error> {
         let count = self.block_group_count()
             .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?
             as usize;
 
-        let offset = 2048;
+        let offset = (2048 + offset) as usize;
         let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
         if haystack.len() < end {
             return Err(Error::OutOfBounds(end));
@@ -277,7 +279,7 @@ mod tests {
         // magic
         buffer[1024 + 56] = EXT2_MAGIC as u8;
         buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
-        let superblock = Superblock::find(&mut buffer);
+        let superblock = Superblock::find(&mut buffer, 0);
         assert!(
             superblock.is_ok(),
             "Err({:?})",
