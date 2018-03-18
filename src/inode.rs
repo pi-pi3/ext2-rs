@@ -1,3 +1,10 @@
+/// An inode is a structure on the disk that represents a file, directory,
+/// symbolic link, etc. Inodes do not contain the data of the file / directory /
+/// etc. that they represent. Instead, they link to the blocks that actually
+/// contain the data. This lets the inodes themselves have a well-defined size
+/// which lets them be placed in easily indexed arrays. Each block group has an
+/// array of inodes it is responsible for, and conversely every inode within a
+/// file system belongs to one of such tables (and one of such block groups).
 #[repr(C, packed)]
 pub struct Inode {
     /// Type and Permissions (see below)
