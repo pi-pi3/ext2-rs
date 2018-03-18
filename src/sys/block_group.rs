@@ -1,11 +1,4 @@
-#[cfg(test)]
-use std::mem;
-#[cfg(test)]
-use std::slice;
-
-#[cfg(not(test))]
 use core::mem;
-#[cfg(not(test))]
 use core::slice;
 
 use error::Error;
@@ -52,11 +45,9 @@ impl BlockGroupDescriptor {
             return Err(Error::OutOfBounds(end));
         }
 
-        let ptr = unsafe {
-            haystack.as_mut_ptr().offset(offset as isize)
-                as *mut BlockGroupDescriptor
-        };
-        let slice = unsafe { slice::from_raw_parts_mut(ptr, count) };
+        let ptr = haystack.as_mut_ptr().offset(offset as isize)
+            as *mut BlockGroupDescriptor;
+        let slice = slice::from_raw_parts_mut(ptr, count);
         Ok(slice)
     }
 }
@@ -70,8 +61,9 @@ mod tests {
         let mut buffer = vec![0_u8; 4096];
         let addr = &buffer[2048] as *const _ as usize;
         // magic
-        let table =
-            BlockGroupDescriptor::find_descriptor_table(&mut buffer, 0, 0);
+        let table = unsafe {
+            BlockGroupDescriptor::find_descriptor_table(&mut buffer, 0, 0)
+        };
         assert!(
             table.is_ok(),
             "Err({:?})",
