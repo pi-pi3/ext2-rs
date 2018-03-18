@@ -8,56 +8,56 @@
 #[repr(C, packed)]
 pub struct Inode {
     /// Type and Permissions (see below)
-    type_perm: u16,
+    pub type_perm: u16,
     /// User ID
-    uid: u16,
+    pub uid: u16,
     /// Lower 32 bits of size in bytes
-    size_low: u32,
+    pub size_low: u32,
     /// Last Access Time (in POSIX time)
-    atime: u32,
+    pub atime: u32,
     /// Creation Time (in POSIX time)
-    ctime: u32,
+    pub ctime: u32,
     /// Last Modification time (in POSIX time)
-    mtime: u32,
+    pub mtime: u32,
     /// Deletion time (in POSIX time)
-    dtime: u32,
+    pub dtime: u32,
     /// Group ID
-    gid: u16,
+    pub gid: u16,
     /// Count of hard links (directory entries) to this inode. When this
     /// reaches 0, the data blocks are marked as unallocated.
-    hard_links: u16,
+    pub hard_links: u16,
     /// Count of disk sectors (not Ext2 blocks) in use by this inode, not
     /// counting the actual inode structure nor directory entries linking
     /// to the inode.
-    sectors_count: u32,
+    pub sectors_count: u32,
     /// Flags
-    flags: u32,
+    pub flags: u32,
     /// Operating System Specific value #1
-    _os_specific_1: u32,
+    pub _os_specific_1: [u8; 4],
     /// Direct block pointers
-    direct_pointer: [u32; 12],
+    pub direct_pointer: [u32; 12],
     /// Singly Indirect Block Pointer (Points to a block that is a list of
     /// block pointers to data)
-    indirect_pointer: u32,
+    pub indirect_pointer: u32,
     /// Doubly Indirect Block Pointer (Points to a block that is a list of
     /// block pointers to Singly Indirect Blocks)
-    doubly_indirect: u32,
+    pub doubly_indirect: u32,
     /// Triply Indirect Block Pointer (Points to a block that is a list of
     /// block pointers to Doubly Indirect Blocks)
-    triply_indirect: u32,
+    pub triply_indirect: u32,
     /// Generation number (Primarily used for NFS)
-    gen_number: u32,
+    pub gen_number: u32,
     /// In Ext2 version 0, this field is reserved. In version >= 1,
     /// Extended attribute block (File ACL).
-    ext_attribute_block: u32,
+    pub ext_attribute_block: u32,
     /// In Ext2 version 0, this field is reserved. In version >= 1, Upper
     /// 32 bits of file size (if feature bit set) if it's a file,
     /// Directory ACL if it's a directory
-    size_high: u32,
+    pub size_high: u32,
     /// Block address of fragment
-    frag_block_addr: u32,
+    pub frag_block_addr: u32,
     /// Operating System Specific Value #2
-    _os_specific_2: [u8; 12],
+    pub _os_specific_2: [u8; 12],
 }
 
 bitflags! {

@@ -4,15 +4,13 @@
 extern crate bitflags;
 
 pub mod error;
-pub mod superblock;
-pub mod block_group;
-pub mod inode;
+pub mod sys;
 
 #[cfg(test)]
 mod tests {
-    use super::superblock::*;
-    use super::block_group::*;
-    use super::inode::*;
+    use sys::superblock::*;
+    use sys::block_group::*;
+    use sys::inode::*;
 
     #[test]
     fn sizes() {

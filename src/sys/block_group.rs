@@ -25,17 +25,17 @@ use error::Error;
 #[repr(C, packed)]
 pub struct BlockGroupDescriptor {
     /// Block address of block usage bitmap
-    block_usage_addr: u32,
+    pub block_usage_addr: u32,
     /// Block address of inode usage bitmap
-    inode_usage_addr: u32,
+    pub inode_usage_addr: u32,
     /// Starting block address of inode table
-    inode_table_block: u32,
+    pub inode_table_block: u32,
     /// Number of unallocated blocks in group
-    free_blocks_count: u16,
+    pub free_blocks_count: u16,
     /// Number of unallocated inodes in group
-    free_inodes_count: u16,
+    pub free_inodes_count: u16,
     /// Number of directories in group
-    dirs_count: u16,
+    pub dirs_count: u16,
     #[doc(hidden)]
     _reserved: [u8; 14],
 }
