@@ -1,3 +1,15 @@
+#[cfg(test)]
+use std::mem;
+#[cfg(test)]
+use std::slice;
+
+#[cfg(not(test))]
+use core::mem;
+#[cfg(not(test))]
+use core::slice;
+
+use error::Error;
+
 /// The Block Group Descriptor Table contains a descriptor for each block group
 /// within the file system. The number of block groups within the file system,
 /// and correspondingly, the number of entries in the Block Group Descriptor
@@ -26,4 +38,45 @@ pub struct BlockGroupDescriptor {
     dirs_count: u16,
     #[doc(hidden)]
     _reserved: [u8; 14],
+}
+
+impl BlockGroupDescriptor {
+    pub fn find_descriptor_table<'a>(
+        haystack: &'a mut [u8],
+        offset: isize,
+        count: usize,
+    ) -> Result<&'a mut [BlockGroupDescriptor], Error> {
+        let offset = (2048 + offset) as usize;
+        let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
+        if haystack.len() < end {
+            return Err(Error::OutOfBounds(end));
+        }
+
+        let ptr = unsafe {
+            haystack.as_mut_ptr().offset(offset as isize)
+                as *mut BlockGroupDescriptor
+        };
+        let slice = unsafe { slice::from_raw_parts_mut(ptr, count) };
+        Ok(slice)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find() {
+        let mut buffer = vec![0_u8; 4096];
+        let addr = &buffer[2048] as *const _ as usize;
+        // magic
+        let table =
+            BlockGroupDescriptor::find_descriptor_table(&mut buffer, 0, 0);
+        assert!(
+            table.is_ok(),
+            "Err({:?})",
+            table.err().unwrap_or_else(|| unreachable!()),
+        );
+        assert_eq!(table.unwrap().as_ptr() as usize, addr);
+    }
 }

@@ -1,15 +1,10 @@
 #[cfg(test)]
 use std::mem;
-#[cfg(test)]
-use std::slice;
 
 #[cfg(not(test))]
 use core::mem;
-#[cfg(not(test))]
-use core::slice;
 
 use error::Error;
-use block_group::BlockGroupDescriptor;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
 /// volume
@@ -173,29 +168,6 @@ impl Superblock {
         } else {
             Ok(superblock)
         }
-    }
-
-    pub fn find_block_table<'a>(
-        &self,
-        haystack: &'a mut [u8],
-        offset: isize,
-    ) -> Result<&'a mut [BlockGroupDescriptor], Error> {
-        let count = self.block_group_count()
-            .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?
-            as usize;
-
-        let offset = (2048 + offset) as usize;
-        let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
-        if haystack.len() < end {
-            return Err(Error::OutOfBounds(end));
-        }
-
-        let ptr = unsafe {
-            haystack.as_mut_ptr().offset(offset as isize)
-                as *mut BlockGroupDescriptor
-        };
-        let slice = unsafe { slice::from_raw_parts_mut(ptr, count) };
-        Ok(slice)
     }
 
     #[inline]
