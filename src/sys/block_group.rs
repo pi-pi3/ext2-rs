@@ -41,7 +41,7 @@ pub struct BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub fn find_descriptor_table<'a>(
+    pub unsafe fn find_descriptor_table<'a>(
         haystack: &'a mut [u8],
         offset: isize,
         count: usize,

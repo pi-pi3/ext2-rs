@@ -147,7 +147,7 @@ pub struct Superblock {
 }
 
 impl Superblock {
-    pub fn find<'a>(
+    pub unsafe fn find<'a>(
         haystack: &'a mut [u8],
         offset: isize,
     ) -> Result<&'a mut Superblock, Error> {
