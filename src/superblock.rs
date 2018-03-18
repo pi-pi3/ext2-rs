@@ -1,3 +1,16 @@
+#[cfg(test)]
+use std::mem;
+#[cfg(test)]
+use std::slice;
+
+#[cfg(not(test))]
+use core::mem;
+#[cfg(not(test))]
+use core::slice;
+
+use error::Error;
+use block_group::BlockGroupDescriptor;
+
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
 /// volume
 pub const EXT2_MAGIC: u16 = 0xef53;
@@ -34,6 +47,7 @@ pub const OS_LITE: u32 = 4;
 /// 512 byte sectors, the Superblock will begin at LBA 2 and will occupy all of
 /// sector 2 and 3.
 #[repr(C, packed)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Superblock {
     // taken from https://wiki.osdev.org/Ext2
     /// Total number of inodes in file system
@@ -139,6 +153,50 @@ pub struct Superblock {
 }
 
 impl Superblock {
+    pub fn find<'a>(
+        haystack: &'a mut [u8],
+    ) -> Result<&'a mut Superblock, Error> {
+        let offset = 1024;
+        let end = offset + mem::size_of::<Superblock>();
+        if haystack.len() < end {
+            return Err(Error::OutOfBounds(end));
+        }
+
+        let superblock: &mut Superblock = unsafe {
+            let ptr =
+                haystack.as_ptr().offset(offset as isize) as *mut Superblock;
+            ptr.as_mut().unwrap()
+        };
+
+        if superblock.magic != EXT2_MAGIC {
+            Err(Error::BadMagic(superblock.magic))
+        } else {
+            Ok(superblock)
+        }
+    }
+
+    pub fn find_block_table<'a>(
+        &self,
+        haystack: &'a mut [u8],
+    ) -> Result<&'a mut [BlockGroupDescriptor], Error> {
+        let count = self.block_group_count()
+            .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?
+            as usize;
+
+        let offset = 2048;
+        let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
+        if haystack.len() < end {
+            return Err(Error::OutOfBounds(end));
+        }
+
+        let ptr = unsafe {
+            haystack.as_ptr().offset(offset as isize)
+                as *mut BlockGroupDescriptor
+        };
+        let slice = unsafe { slice::from_raw_parts_mut(ptr, count) };
+        Ok(slice)
+    }
+
     #[inline]
     pub fn block_size(&self) -> usize {
         1024 << self.log_block_size
