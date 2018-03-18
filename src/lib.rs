@@ -3,6 +3,7 @@
 #[macro_use]
 extern crate bitflags;
 
+pub mod error;
 pub mod superblock;
 pub mod block_group;
 pub mod inode;
