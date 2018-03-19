@@ -258,7 +258,7 @@ macro_rules! impl_slice {
     };
 }
 
-//impl_slice!(&'a mut [T], 'a);
+impl_slice!(&'b mut [T], 'b);
 impl_slice!(Vec<T>);
 impl_slice!(Box<[T]>);
 
