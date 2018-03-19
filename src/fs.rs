@@ -1,3 +1,4 @@
+use core::mem;
 use alloc::Vec;
 
 use error::Error;
@@ -53,13 +54,27 @@ where
         })
     }
 
-    pub fn update(&mut self) -> Result<(), Error> {
-        let slice = BufferSlice::from_cast(
-            &self.superblock.inner,
-            self.superblock.offset,
-        );
-        let commit = slice.commit();
-        self.buffer.commit(commit).map_err(|err| Error::from(err))
+    pub fn update_global(&mut self) -> Result<(), Error> {
+        // superblock
+        {
+            let slice = BufferSlice::from_cast(
+                &self.superblock.inner,
+                self.superblock.offset,
+            );
+            let commit = slice.commit();
+            self.buffer.commit(commit).map_err(|err| Error::from(err))?;
+        }
+
+        // block group descriptors
+        let mut offset = self.block_groups.offset;
+        for descr in &self.block_groups.inner {
+            let slice = BufferSlice::from_cast(descr, offset);
+            let commit = slice.commit();
+            self.buffer.commit(commit).map_err(|err| Error::from(err))?;
+            offset += mem::size_of::<BlockGroupDescriptor>();
+        }
+
+        Ok(())
     }
 
     fn superblock(&self) -> &Superblock {
