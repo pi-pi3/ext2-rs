@@ -56,14 +56,14 @@ impl BlockGroupDescriptor {
         Ok(descr)
     }
 
-    pub fn find_descriptor_table<'a, E>(
+    pub unsafe fn find_descriptor_table<'a, E>(
         haystack: &'a Buffer<u8, Error = E>,
+        offset: usize,
         count: usize,
     ) -> Result<(Vec<BlockGroupDescriptor>, usize), Error>
     where
         Error: From<E>,
     {
-        let offset = 2048; // TODO: this assumes a block size
         let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
         if haystack.len() < end {
             return Err(Error::OutOfBounds(end));
@@ -88,7 +88,8 @@ mod tests {
     #[test]
     fn find() {
         let buffer = vec![0_u8; 4096];
-        let table = BlockGroupDescriptor::find_descriptor_table(&buffer, 8);
+        let table =
+            BlockGroupDescriptor::find_descriptor_table(&buffer, 2048, 8);
         assert!(
             table.is_ok(),
             "Err({:?})",
