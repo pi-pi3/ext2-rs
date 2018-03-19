@@ -78,16 +78,17 @@ where
 }
 
 impl<'a> BufferSlice<'a, u8> {
-    pub fn dynamic_cast<T: Copy>(&self) -> (T, usize) {
+    pub unsafe fn dynamic_cast<T: Copy>(&self) -> (T, usize) {
         assert!(self.inner.len() >= mem::size_of::<T>());
         let index = self.index;
-        let cast = unsafe {
-            mem::transmute_copy(self.inner.as_ptr().as_ref().unwrap())
-        };
+        let cast = mem::transmute_copy(self.inner.as_ptr().as_ref().unwrap());
         (cast, index)
     }
 
-    pub fn from_cast<T: Copy>(cast: &T, index: usize) -> BufferSlice<'a, u8> {
+    pub fn from_cast<T: Copy>(
+        cast: &'a T,
+        index: usize,
+    ) -> BufferSlice<'a, u8> {
         let len = mem::size_of::<T>();
         let ptr = cast as *const T as *const u8;
         let slice = unsafe { slice::from_raw_parts(ptr, len) };
