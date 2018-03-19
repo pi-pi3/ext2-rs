@@ -24,4 +24,30 @@ impl From<io::Error> for Error {
     }
 }
 
+impl PartialEq for Error {
+    fn eq(&self, rhs: &Error) -> bool {
+        match (self, rhs) {
+            (&Error::BadMagic(a), &Error::BadMagic(b)) => a == b,
+            (&Error::OutOfBounds(a), &Error::OutOfBounds(b)) => a == b,
+            (
+                &Error::BadBlockGroupCount(a1, a2),
+                &Error::BadBlockGroupCount(b1, b2),
+            ) => a1 == b1 && a2 == b2,
+            _ => false,
+        }
+    }
+
+    fn ne(&self, rhs: &Error) -> bool {
+        match (self, rhs) {
+            (&Error::BadMagic(a), &Error::BadMagic(b)) => a != b,
+            (&Error::OutOfBounds(a), &Error::OutOfBounds(b)) => a != b,
+            (
+                &Error::BadBlockGroupCount(a1, a2),
+                &Error::BadBlockGroupCount(b1, b2),
+            ) => a1 != b1 || a2 != b2,
+            _ => false,
+        }
+    }
+}
+
 pub enum Infallible {}
