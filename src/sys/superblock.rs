@@ -1,4 +1,5 @@
 use core::mem;
+use core::fmt::{self, Debug};
 
 use error::Error;
 use buffer::Buffer;
@@ -142,6 +143,54 @@ pub struct Superblock {
     pub journal_orphan_head: u32,
     #[doc(hidden)]
     _reserved: [u8; 788],
+}
+
+impl Debug for Superblock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Superblock")
+            .field("inodes_count", unsafe { &self.inodes_count })
+            .field("blocks_count", unsafe { &self.blocks_count })
+            .field("r_blocks_count", unsafe { &self.r_blocks_count })
+            .field("free_blocks_count", unsafe { &self.free_blocks_count })
+            .field("free_inodes_count", unsafe { &self.free_inodes_count })
+            .field("first_data_block", unsafe { &self.first_data_block })
+            .field("log_block_size", unsafe { &self.log_block_size })
+            .field("log_frag_size", unsafe { &self.log_frag_size })
+            .field("blocks_per_group", unsafe { &self.blocks_per_group })
+            .field("frags_per_group", unsafe { &self.frags_per_group })
+            .field("inodes_per_group", unsafe { &self.inodes_per_group })
+            .field("mtime", unsafe { &self.mtime })
+            .field("wtime", unsafe { &self.wtime })
+            .field("mnt_count", unsafe { &self.mnt_count })
+            .field("max_mnt_count", unsafe { &self.max_mnt_count })
+            .field("magic", unsafe { &self.magic })
+            .field("state", unsafe { &self.state })
+            .field("errors", unsafe { &self.errors })
+            .field("rev_minor", unsafe { &self.rev_minor })
+            .field("lastcheck", unsafe { &self.lastcheck })
+            .field("checkinterval", unsafe { &self.checkinterval })
+            .field("creator_os", unsafe { &self.creator_os })
+            .field("rev_major", unsafe { &self.rev_major })
+            .field("block_uid", unsafe { &self.block_uid })
+            .field("block_gid", unsafe { &self.block_gid })
+            .field("first_inode", unsafe { &self.first_inode })
+            .field("inode_size", unsafe { &self.inode_size })
+            .field("block_group", unsafe { &self.block_group })
+            .field("features_opt", unsafe { &self.features_opt })
+            .field("features_req", unsafe { &self.features_req })
+            .field("features_ronly", unsafe { &self.features_ronly })
+            .field("fs_id", &self.fs_id)
+            .field("volume_name", &self.volume_name)
+            .field("last_mnt_path", &self.last_mnt_path.as_ref())
+            .field("compression", unsafe { &self.compression })
+            .field("prealloc_blocks_files", &self.prealloc_blocks_files)
+            .field("prealloc_blocks_dirs", &self.prealloc_blocks_dirs)
+            .field("journal_id", &self.journal_id)
+            .field("journal_inode", unsafe { &self.journal_inode })
+            .field("journal_dev", unsafe { &self.journal_dev })
+            .field("journal_orphan_head", unsafe { &self.journal_orphan_head })
+            .finish()
+    }
 }
 
 impl Superblock {

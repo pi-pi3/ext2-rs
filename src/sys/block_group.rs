@@ -1,4 +1,5 @@
 use core::mem;
+use core::fmt::{self, Debug};
 
 use alloc::Vec;
 
@@ -34,6 +35,19 @@ pub struct BlockGroupDescriptor {
     pub dirs_count: u16,
     #[doc(hidden)]
     _reserved: [u8; 14],
+}
+
+impl Debug for BlockGroupDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BlockGroupDescriptor")
+            .field("block_usage_addr", unsafe { &self.block_usage_addr })
+            .field("inode_usage_addr", unsafe { &self.inode_usage_addr })
+            .field("inode_table_block", unsafe { &self.inode_table_block })
+            .field("free_blocks_count", unsafe { &self.free_blocks_count })
+            .field("free_inodes_count", unsafe { &self.free_inodes_count })
+            .field("dirs_count", unsafe { &self.dirs_count })
+            .finish()
+    }
 }
 
 impl BlockGroupDescriptor {
