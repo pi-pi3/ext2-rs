@@ -4,5 +4,9 @@ version = "0.1.0"
 authors = ["Szymon Walter <walter.szymon.98@gmail.com>"]
 
 [dependencies]
-rlibc = "1.0"
 bitflags = "1.0"
+rlibc = { version = "1.0", optional = true }
+
+[features]
+default = ["no_std"]
+no_std = ["rlibc"]
