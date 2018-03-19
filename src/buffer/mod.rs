@@ -16,31 +16,17 @@ where
 {
     fn len(&self) -> Length;
     fn commit(&mut self, slice: Option<BufferCommit<T>>);
-    unsafe fn slice_unchecked(&self, range: Range<usize>) -> &[T];
-
-    unsafe fn slice_unchecked_mut<'a>(
+    unsafe fn slice_unchecked<'a>(
         &'a self,
         range: Range<usize>,
-    ) -> BufferSlice<'a, T> {
-        let index = range.start;
-        let slice = self.slice_unchecked(range);
-        BufferSlice::new(slice, index)
-    }
+    ) -> BufferSlice<'a, T>;
 
-    fn slice(&self, range: Range<usize>) -> Option<&[T]> {
-        if self.len() >= range.end && self.len() > range.start {
-            unsafe { Some(self.slice_unchecked(range)) }
-        } else {
-            None
-        }
-    }
-
-    fn slice_mut<'a>(
+    fn slice<'a>(
         &'a mut self,
         range: Range<usize>,
     ) -> Option<BufferSlice<'a, T>> {
         if self.len() >= range.end && self.len() > range.start {
-            unsafe { Some(self.slice_unchecked_mut(range)) }
+            unsafe { Some(self.slice_unchecked(range)) }
         } else {
             None
         }
@@ -233,8 +219,12 @@ where
         });
     }
 
-    unsafe fn slice_unchecked(&self, range: Range<usize>) -> &[T] {
-        self.as_ref().get_unchecked(range)
+    unsafe fn slice_unchecked<'a>(
+        &'a self,
+        range: Range<usize>,
+    ) -> BufferSlice<'a, T> {
+        let index = range.start;
+        BufferSlice::new(self.as_ref().get_unchecked(range), index)
     }
 }
 
@@ -267,7 +257,7 @@ mod tests {
     fn buffer() {
         let mut buffer = vec![0; 1024];
         let commit = {
-            let mut slice = buffer.slice_mut(256..512).unwrap();
+            let mut slice = buffer.slice(256..512).unwrap();
             slice.iter_mut().for_each(|x| *x = 1);
             slice.commit()
         };
