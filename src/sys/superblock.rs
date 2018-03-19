@@ -1,6 +1,7 @@
 use core::mem;
 
 use error::Error;
+use buffer::Buffer;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
 /// volume
@@ -38,6 +39,7 @@ pub const OS_LITE: u32 = 4;
 /// 512 byte sectors, the Superblock will begin at LBA 2 and will occupy all of
 /// sector 2 and 3.
 #[repr(C, packed)]
+#[derive(Clone, Copy)]
 pub struct Superblock {
     // taken from https://wiki.osdev.org/Ext2
     /// Total number of inodes in file system
@@ -143,24 +145,23 @@ pub struct Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<'a>(
-        haystack: &'a mut [u8],
-        offset: isize,
-    ) -> Result<&'a mut Superblock, Error> {
-        let offset = (1024 + offset) as usize;
+    pub fn find<'a>(
+        haystack: &'a Buffer<u8>,
+    ) -> Result<(Superblock, usize), Error> {
+        let offset = 1024;
         let end = offset + mem::size_of::<Superblock>();
         if haystack.len() < end {
             return Err(Error::OutOfBounds(end));
         }
 
-        let superblock: &mut Superblock = {
-            let ptr = haystack.as_mut_ptr().offset(offset as isize)
-                as *mut Superblock;
-            ptr.as_mut().unwrap()
+        let superblock = unsafe {
+            haystack
+                .slice_unchecked(offset..end)
+                .dynamic_cast::<Superblock>()
         };
 
-        if superblock.magic != EXT2_MAGIC {
-            Err(Error::BadMagic(superblock.magic))
+        if superblock.0.magic != EXT2_MAGIC {
+            Err(Error::BadMagic(superblock.0.magic))
         } else {
             Ok(superblock)
         }
@@ -243,16 +244,14 @@ mod tests {
     #[test]
     fn find() {
         let mut buffer = vec![0_u8; 4096];
-        let addr = &buffer[1024] as *const _ as usize;
         // magic
         buffer[1024 + 56] = EXT2_MAGIC as u8;
         buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
-        let superblock = unsafe { Superblock::find(&mut buffer, 0) };
+        let superblock = Superblock::find(&buffer);
         assert!(
             superblock.is_ok(),
             "Err({:?})",
             superblock.err().unwrap_or_else(|| unreachable!()),
         );
-        assert_eq!(superblock.unwrap() as *const _ as usize, addr);
     }
 }
