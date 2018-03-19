@@ -27,3 +27,18 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+    use std::cell::RefCell;
+
+    use super::Ext2;
+
+    #[test]
+    fn file() {
+        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let mut fs = Ext2::new(file);
+        assert!(fs.init().is_ok());
+    }
+}
