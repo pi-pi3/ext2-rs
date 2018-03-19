@@ -89,36 +89,28 @@ where
         self.buffer.commit(commit).map_err(|err| Error::from(err))
     }
 
-    pub fn inode_nth(
-        &self,
-        block_group: usize,
-        index: usize,
-    ) -> Option<(Inode, usize)> {
-        self.inodes_nth(block_group, index)
-            .and_then(|mut inodes| inodes.next())
+    pub fn root_inode(&self) -> (Inode, usize) {
+        self.inode_nth(2).unwrap()
     }
 
-    pub fn inodes<'a>(&'a self, block_group: usize) -> Inodes<'a, B> {
-        self.inodes_nth(block_group, 1).unwrap()
+    pub fn inode_nth(&self, index: usize) -> Option<(Inode, usize)> {
+        self.inodes_nth(index).next()
     }
 
-    pub fn inodes_nth<'a>(
-        &'a self,
-        block_group: usize,
-        index: usize,
-    ) -> Option<Inodes<'a, B>> {
+    pub fn inodes<'a>(&'a self) -> Inodes<'a, B> {
+        self.inodes_nth(1)
+    }
+
+    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, B> {
         assert!(index > 0, "inodes are 1-indexed");
-        if index > self.inodes_count() {
-            None
-        } else {
-            Some(Inodes {
-                buffer: &self.buffer,
-                block_size: self.block_size(),
-                inode_size: self.inode_size(),
-                inodes_block: self.inodes_block(block_group),
-                inodes_count: self.inodes_count(),
-                index,
-            })
+        Inodes {
+            buffer: &self.buffer,
+            block_groups: &self.block_groups.inner,
+            block_size: self.block_size(),
+            inode_size: self.inode_size(),
+            inodes_per_group: self.inodes_count(),
+            inodes_count: self.total_inodes_count(),
+            index,
         }
     }
 
@@ -144,12 +136,12 @@ where
         }
     }
 
-    pub fn inodes_block(&self, block_group: usize) -> usize {
-        self.block_groups.inner[block_group].inode_table_block as _
-    }
-
     pub fn inodes_count(&self) -> usize {
         self.superblock().inodes_per_group as _
+    }
+
+    pub fn total_inodes_count(&self) -> usize {
+        self.superblock().inodes_count as _
     }
 
     pub fn block_group_count(&self) -> Result<usize, Error> {
@@ -174,9 +166,10 @@ where
 
 pub struct Inodes<'a, B: 'a + Buffer<u8>> {
     buffer: &'a B,
+    block_groups: &'a [BlockGroupDescriptor],
     block_size: usize,
     inode_size: usize,
-    inodes_block: usize,
+    inodes_per_group: usize,
     inodes_count: usize,
     index: usize,
 }
@@ -189,9 +182,15 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.inodes_count {
-            let offset = self.inodes_block * self.block_size
-                + (self.index - 1) * self.inode_size;
+            let block_group = (self.index - 1) / self.inodes_per_group;
+            let index = (self.index - 1) % self.inodes_per_group;
             self.index += 1;
+
+            let inodes_block =
+                self.block_groups[block_group].inode_table_block as usize;
+
+            let offset =
+                inodes_block * self.block_size + index * self.inode_size;
             unsafe {
                 Inode::find_inode(self.buffer, offset, self.inode_size).ok()
             }
@@ -247,7 +246,7 @@ mod tests {
 
         let fs = fs.unwrap();
 
-        let inodes = fs.inodes(0).filter(|inode| inode.0.in_use());
+        let inodes = fs.inodes().filter(|inode| inode.0.in_use());
         for inode in inodes {
             println!("{:?}", inode);
         }
