@@ -5,6 +5,7 @@ use error::Error;
 use buffer::{Buffer, BufferSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
+use sys::inode::Inode;
 
 struct Struct<T> {
     pub inner: T,
@@ -85,6 +86,19 @@ where
         &mut self.superblock.inner
     }
 
+    pub fn version(&self) -> (u32, u16) {
+        (self.superblock().rev_major, self.superblock().rev_minor)
+    }
+
+    pub fn inode_size(&self) -> usize {
+        if self.version().0 == 0 {
+            mem::size_of::<Inode>()
+        } else {
+            // note: inodes bigger than 128 are not supported
+            self.superblock().inode_size as usize
+        }
+    }
+
     pub fn block_group_count(&self) -> Result<usize, Error> {
         self.superblock()
             .block_group_count()
@@ -124,6 +138,17 @@ mod tests {
     fn file() {
         let file = RefCell::new(File::open("ext2.bin").unwrap());
         let fs = Ext2::new(file);
-        assert_eq!(Ok(()), fs.map(|_| ()));
+
+        assert!(
+            fs.is_ok(),
+            "Err({:?})",
+            fs.err().unwrap_or_else(|| unreachable!()),
+        );
+
+        let fs = fs.unwrap();
+
+        let vers = fs.version();
+        println!("version: {}.{}", vers.0, vers.1);
+        assert_eq!(128, fs.inode_size());
     }
 }
