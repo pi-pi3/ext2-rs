@@ -6,17 +6,22 @@ use alloc::Vec;
 use alloc::boxed::Box;
 use alloc::borrow::{Cow, ToOwned};
 
-pub mod length;
+use error::Infallible;
 
+pub mod length;
 use self::length::Length;
 
 pub trait Buffer<T>
 where
     [T]: ToOwned,
 {
+    type Error;
+
     fn len(&self) -> Length;
-    // TODO: return Result
-    fn commit(&mut self, slice: Option<BufferCommit<T>>);
+    fn commit(
+        &mut self,
+        slice: Option<BufferCommit<T>>,
+    ) -> Result<(), Self::Error>;
     unsafe fn slice_unchecked<'a>(
         &'a self,
         range: Range<usize>,
@@ -214,11 +219,13 @@ macro_rules! impl_slice {
             T: Clone,
             [T]: ToOwned,
         {
+            type Error = Infallible;
+
             fn len(&self) -> Length {
                 Length::Bounded(<Self as AsRef<[T]>>::as_ref(self).len())
             }
 
-            fn commit(&mut self, slice: Option<BufferCommit<T>>) {
+            fn commit(&mut self, slice: Option<BufferCommit<T>>) -> Result<(), Infallible> {
                 slice.map(|slice| {
                     let index = slice.at_index();
                     let end = index + slice.as_ref().len();
@@ -228,6 +235,7 @@ macro_rules! impl_slice {
                         &mut <Self as AsMut<[T]>>::as_mut(self)[index..end];
                     dst.clone_from_slice(slice.as_ref());
                 });
+                Ok(())
             }
 
             unsafe fn slice_unchecked<'a>(
@@ -250,14 +258,14 @@ macro_rules! impl_slice {
     };
 }
 
-//impl_slice!('a, &'a mut [T]);
+//impl_slice!(&'a mut [T], 'a);
 impl_slice!(Vec<T>);
 impl_slice!(Box<[T]>);
 
 #[cfg(any(test, not(feature = "no_std")))]
 mod file {
     use std::ops::Range;
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::io::{self, Read, Seek, SeekFrom, Write};
     use std::fs::File;
     use std::cell::RefCell;
 
@@ -265,6 +273,8 @@ mod file {
     use super::length::Length;
 
     impl Buffer<u8> for RefCell<File> {
+        type Error = io::Error;
+
         fn len(&self) -> Length {
             Length::Bounded(
                 self.borrow()
@@ -274,15 +284,21 @@ mod file {
             )
         }
 
-        fn commit(&mut self, slice: Option<BufferCommit<u8>>) {
-            slice.map(|slice| {
-                let index = slice.at_index();
-                let end = index + slice.as_ref().len();
-                let mut refmut = self.borrow_mut();
-                let _ = refmut
-                    .seek(SeekFrom::Start(index as u64))
-                    .and_then(|_| refmut.write(&slice.as_ref()[index..end]));
-            });
+        fn commit(
+            &mut self,
+            slice: Option<BufferCommit<u8>>,
+        ) -> Result<(), Self::Error> {
+            slice
+                .map(|slice| {
+                    let index = slice.at_index();
+                    let end = index + slice.as_ref().len();
+                    let mut refmut = self.borrow_mut();
+                    refmut
+                        .seek(SeekFrom::Start(index as u64))
+                        .and_then(|_| refmut.write(&slice.as_ref()[index..end]))
+                        .map(|_| ())
+                })
+                .unwrap_or(Ok(()))
         }
 
         unsafe fn slice_unchecked<'a>(
@@ -329,7 +345,7 @@ mod tests {
             slice.iter_mut().for_each(|x| *x = 1);
             slice.commit()
         };
-        buffer.commit(commit);
+        assert!(buffer.commit(commit).is_ok());
 
         for (i, &x) in buffer.iter().enumerate() {
             if i < 256 || i >= 512 {

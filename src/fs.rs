@@ -8,7 +8,10 @@ pub struct Ext2<B: Buffer<u8>> {
     superblock: Option<(Superblock, usize)>,
 }
 
-impl<B: Buffer<u8>> Ext2<B> {
+impl<B: Buffer<u8>> Ext2<B>
+where
+    Error: From<B::Error>,
+{
     pub fn new(buffer: B) -> Ext2<B> {
         Ext2 {
             buffer,

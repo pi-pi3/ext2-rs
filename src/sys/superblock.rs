@@ -145,9 +145,12 @@ pub struct Superblock {
 }
 
 impl Superblock {
-    pub fn find<'a>(
-        haystack: &'a Buffer<u8>,
-    ) -> Result<(Superblock, usize), Error> {
+    pub fn find<'a, E>(
+        haystack: &'a Buffer<u8, Error = E>,
+    ) -> Result<(Superblock, usize), Error>
+    where
+        Error: From<E>,
+    {
         let offset = 1024;
         let end = offset + mem::size_of::<Superblock>();
         if haystack.len() < end {

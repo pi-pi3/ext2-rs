@@ -1,12 +1,13 @@
 #![feature(alloc)]
 #![feature(specialization)]
 #![feature(swap_with_slice)]
-#![cfg_attr(not(test), no_std)]
+#![feature(macro_lifetime_matcher)]
+#![cfg_attr(all(not(test), feature = "no_std"), no_std)]
 
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
-#[cfg(test)]
+#[cfg(any(test, not(feature = "no_std")))]
 extern crate core;
 
 pub mod error;
