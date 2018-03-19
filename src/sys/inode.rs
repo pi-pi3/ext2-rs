@@ -119,6 +119,10 @@ impl Inode {
 
         Ok(inode)
     }
+
+    pub fn in_use(&self) -> bool {
+        self.hard_links > 0
+    }
 }
 
 bitflags! {
