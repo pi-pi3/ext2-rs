@@ -15,16 +15,14 @@ where
     [T]: ToOwned,
 {
     fn len(&self) -> Length;
+    // TODO: return Result
     fn commit(&mut self, slice: Option<BufferCommit<T>>);
     unsafe fn slice_unchecked<'a>(
         &'a self,
         range: Range<usize>,
     ) -> BufferSlice<'a, T>;
 
-    fn slice<'a>(
-        &'a mut self,
-        range: Range<usize>,
-    ) -> Option<BufferSlice<'a, T>> {
+    fn slice<'a>(&'a self, range: Range<usize>) -> Option<BufferSlice<'a, T>> {
         if self.len() >= range.end && self.len() > range.start {
             unsafe { Some(self.slice_unchecked(range)) }
         } else {
@@ -49,6 +47,16 @@ where
         BufferSlice {
             inner: Cow::Borrowed(inner),
             index: 0,
+        }
+    }
+
+    pub fn new_owned(
+        inner: <[T] as ToOwned>::Owned,
+        index: usize,
+    ) -> BufferSlice<'static, T> {
+        BufferSlice {
+            inner: Cow::Owned(inner),
+            index,
         }
     }
 }
@@ -199,55 +207,114 @@ impl<T> DerefMut for BufferCommit<T> {
     }
 }
 
-default impl<T, B> Buffer<T> for B
-where
-    T: Clone,
-    [T]: ToOwned,
-    B: AsRef<[T]> + AsMut<[T]>,
-{
-    fn len(&self) -> Length {
-        Length::Bounded(self.as_ref().len())
-    }
+macro_rules! impl_slice {
+    (@inner $buffer:ty $( , $lt:lifetime )* ) => {
+        impl<$( $lt, )* T> Buffer<T> for $buffer
+        where
+            T: Clone,
+            [T]: ToOwned,
+        {
+            fn len(&self) -> Length {
+                Length::Bounded(<Self as AsRef<[T]>>::as_ref(self).len())
+            }
 
-    fn commit(&mut self, slice: Option<BufferCommit<T>>) {
-        slice.map(|slice| {
-            let index = slice.at_index();
-            let end = index + slice.as_ref().len();
-            // XXX: it would be much better to drop the contents of dst and
-            // move the contents of slice instead of cloning
-            let dst = &mut self.as_mut()[index..end];
-            dst.clone_from_slice(slice.as_ref());
-        });
-    }
+            fn commit(&mut self, slice: Option<BufferCommit<T>>) {
+                slice.map(|slice| {
+                    let index = slice.at_index();
+                    let end = index + slice.as_ref().len();
+                    // XXX: it would be much better to drop the contents of dst
+                    // and move the contents of slice instead of cloning
+                    let dst =
+                        &mut <Self as AsMut<[T]>>::as_mut(self)[index..end];
+                    dst.clone_from_slice(slice.as_ref());
+                });
+            }
 
-    unsafe fn slice_unchecked<'a>(
-        &'a self,
-        range: Range<usize>,
-    ) -> BufferSlice<'a, T> {
-        let index = range.start;
-        BufferSlice::new(self.as_ref().get_unchecked(range), index)
-    }
+            unsafe fn slice_unchecked<'a>(
+                &'a self,
+                range: Range<usize>,
+            ) -> BufferSlice<'a, T> {
+                let index = range.start;
+                BufferSlice::new(
+                    <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range),
+                    index,
+                )
+            }
+        }
+    };
+    ($buffer:ty) => {
+        impl_slice!(@inner $buffer);
+    };
+    ($buffer:ty $( , $lt:lifetime )* ) => {
+        impl_slice!(@inner $buffer $( , $lt )* );
+    };
 }
 
-impl<'a, T> Buffer<T> for &'a mut [T]
-where
-    T: Clone,
-    [T]: ToOwned,
-{
-}
+//impl_slice!('a, &'a mut [T]);
+impl_slice!(Vec<T>);
+impl_slice!(Box<[T]>);
 
-impl<T> Buffer<T> for Vec<T>
-where
-    T: Clone,
-    [T]: ToOwned,
-{
-}
+#[cfg(any(test, not(feature = "no_std")))]
+mod file {
+    use std::ops::Range;
+    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::fs::File;
+    use std::cell::RefCell;
 
-impl<T> Buffer<T> for Box<[T]>
-where
-    T: Clone,
-    [T]: ToOwned,
-{
+    use super::{Buffer, BufferCommit, BufferSlice};
+    use super::length::Length;
+
+    impl Buffer<u8> for RefCell<File> {
+        fn len(&self) -> Length {
+            Length::Bounded(
+                self.borrow()
+                    .metadata()
+                    .map(|data| data.len() as usize)
+                    .unwrap_or(0),
+            )
+        }
+
+        fn commit(&mut self, slice: Option<BufferCommit<u8>>) {
+            slice.map(|slice| {
+                let index = slice.at_index();
+                let end = index + slice.as_ref().len();
+                let mut refmut = self.borrow_mut();
+                let _ = refmut
+                    .seek(SeekFrom::Start(index as u64))
+                    .and_then(|_| refmut.write(&slice.as_ref()[index..end]));
+            });
+        }
+
+        unsafe fn slice_unchecked<'a>(
+            &'a self,
+            range: Range<usize>,
+        ) -> BufferSlice<'a, u8> {
+            let index = range.start;
+            let mut vec = Vec::with_capacity(range.end - range.start);
+            let mut refmut = self.borrow_mut();
+            refmut
+                .seek(SeekFrom::Start(index as u64))
+                .and_then(|_| refmut.read_exact(&mut vec[range]))
+                .unwrap_or_else(|err| {
+                    panic!("could't read from File Buffer: {:?}", err)
+                });
+            BufferSlice::new_owned(vec, index)
+        }
+
+        fn slice<'a>(
+            &'a self,
+            range: Range<usize>,
+        ) -> Option<BufferSlice<'a, u8>> {
+            let index = range.start;
+            let mut vec = Vec::with_capacity(range.end - range.start);
+            let mut refmut = self.borrow_mut();
+            refmut
+                .seek(SeekFrom::Start(index as u64))
+                .and_then(|_| refmut.read_exact(&mut vec[range]))
+                .map(move |_| BufferSlice::new_owned(vec, index))
+                .ok()
+        }
+    }
 }
 
 #[cfg(test)]
