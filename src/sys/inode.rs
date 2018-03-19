@@ -1,3 +1,8 @@
+use core::mem;
+
+use error::Error;
+use buffer::Buffer;
+
 /// An inode is a structure on the disk that represents a file, directory,
 /// symbolic link, etc. Inodes do not contain the data of the file / directory /
 /// etc. that they represent. Instead, they link to the blocks that actually
@@ -6,6 +11,7 @@
 /// array of inodes it is responsible for, and conversely every inode within a
 /// file system belongs to one of such tables (and one of such block groups).
 #[repr(C, packed)]
+#[derive(Clone, Copy)]
 pub struct Inode {
     /// Type and Permissions (see below)
     pub type_perm: u16,
@@ -58,6 +64,32 @@ pub struct Inode {
     pub frag_block_addr: u32,
     /// Operating System Specific Value #2
     pub _os_specific_2: [u8; 12],
+}
+
+impl Inode {
+    pub unsafe fn find_inode<'a, E>(
+        haystack: &'a Buffer<u8, Error = E>,
+        offset: usize,
+        size: usize,
+    ) -> Result<(Inode, usize), Error>
+    where
+        Error: From<E>,
+    {
+        if size != mem::size_of::<Inode>() {
+            unimplemented!("inodes with a size != 128");
+        }
+
+        let end = offset + size;
+        if haystack.len() < end {
+            return Err(Error::OutOfBounds(end));
+        }
+
+        let inode = haystack
+            .slice_unchecked(offset..end)
+            .dynamic_cast::<Inode>();
+
+        Ok(inode)
+    }
 }
 
 bitflags! {
