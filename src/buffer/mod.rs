@@ -306,11 +306,13 @@ mod file {
             range: Range<usize>,
         ) -> BufferSlice<'a, u8> {
             let index = range.start;
-            let mut vec = Vec::with_capacity(range.end - range.start);
+            let len = range.end - range.start;
+            let mut vec = Vec::with_capacity(len);
+            vec.set_len(len);
             let mut refmut = self.borrow_mut();
             refmut
                 .seek(SeekFrom::Start(index as u64))
-                .and_then(|_| refmut.read_exact(&mut vec[range]))
+                .and_then(|_| refmut.read_exact(&mut vec[..]))
                 .unwrap_or_else(|err| {
                     panic!("could't read from File Buffer: {:?}", err)
                 });
