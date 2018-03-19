@@ -157,7 +157,7 @@ impl Superblock {
             return Err(Error::OutOfBounds(end));
         }
 
-        let superblock = unsafe {
+        let superblock = {
             haystack
                 .slice_unchecked(offset..end)
                 .dynamic_cast::<Superblock>()
@@ -250,7 +250,7 @@ mod tests {
         // magic
         buffer[1024 + 56] = EXT2_MAGIC as u8;
         buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
-        let superblock = Superblock::find(&buffer);
+        let superblock = unsafe { Superblock::find(&buffer) };
         assert!(
             superblock.is_ok(),
             "Err({:?})",
@@ -265,7 +265,7 @@ mod tests {
         use std::fs::File;
 
         let file = RefCell::new(File::open("ext2.bin").unwrap());
-        let superblock = Superblock::find(&file);
+        let superblock = unsafe { Superblock::find(&file) };
         assert!(
             superblock.is_ok(),
             "Err({:?})",

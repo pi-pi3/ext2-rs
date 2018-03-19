@@ -72,7 +72,7 @@ impl BlockGroupDescriptor {
         let mut vec = Vec::with_capacity(count);
         for i in 0..count {
             let offset = offset + i * mem::size_of::<BlockGroupDescriptor>();
-            vec.push(unsafe {
+            vec.push({
                 BlockGroupDescriptor::find_descriptor(haystack, offset)?.0
             });
         }
@@ -88,8 +88,9 @@ mod tests {
     #[test]
     fn find() {
         let buffer = vec![0_u8; 4096];
-        let table =
-            BlockGroupDescriptor::find_descriptor_table(&buffer, 2048, 8);
+        let table = unsafe {
+            BlockGroupDescriptor::find_descriptor_table(&buffer, 2048, 8)
+        };
         assert!(
             table.is_ok(),
             "Err({:?})",

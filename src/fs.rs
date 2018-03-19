@@ -29,7 +29,7 @@ where
     Error: From<B::Error>,
 {
     pub fn new(buffer: B) -> Result<Ext2<B>, Error> {
-        let superblock = Struct::from(Superblock::find(&buffer)?);
+        let superblock = unsafe { Struct::from(Superblock::find(&buffer)?) };
         let block_size = superblock.inner.block_size();
         let block_groups_offset =
             (superblock.inner.first_data_block as usize + 1) * block_size;
@@ -38,11 +38,13 @@ where
             .block_group_count()
             .map(|count| count as usize)
             .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?;
-        let block_groups = BlockGroupDescriptor::find_descriptor_table(
-            &buffer,
-            block_groups_offset,
-            block_groups_count,
-        )?;
+        let block_groups = unsafe {
+            BlockGroupDescriptor::find_descriptor_table(
+                &buffer,
+                block_groups_offset,
+                block_groups_count,
+            )?
+        };
         let block_groups = Struct::from(block_groups);
         Ok(Ext2 {
             buffer,
