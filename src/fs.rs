@@ -33,12 +33,20 @@ mod tests {
     use std::fs::File;
     use std::cell::RefCell;
 
+    use buffer::Buffer;
+
     use super::Ext2;
+
+    #[test]
+    fn file_len() {
+        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        assert_eq!(unsafe { file.slice_unchecked(1024..2048).len() }, 1024);
+    }
 
     #[test]
     fn file() {
         let file = RefCell::new(File::open("ext2.bin").unwrap());
         let mut fs = Ext2::new(file);
-        assert!(fs.init().is_ok());
+        assert_eq!(Ok(()), fs.init());
     }
 }
