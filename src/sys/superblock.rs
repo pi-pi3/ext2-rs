@@ -145,7 +145,7 @@ pub struct Superblock {
 }
 
 impl Superblock {
-    pub fn find<'a, E>(
+    pub unsafe fn find<'a, E>(
         haystack: &'a Buffer<u8, Error = E>,
     ) -> Result<(Superblock, usize), Error>
     where
@@ -251,6 +251,21 @@ mod tests {
         buffer[1024 + 56] = EXT2_MAGIC as u8;
         buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
         let superblock = Superblock::find(&buffer);
+        assert!(
+            superblock.is_ok(),
+            "Err({:?})",
+            superblock.err().unwrap_or_else(|| unreachable!()),
+        );
+    }
+
+    #[test]
+    #[allow(unused_unsafe)]
+    fn superblock() {
+        use std::cell::RefCell;
+        use std::fs::File;
+
+        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let superblock = Superblock::find(&file);
         assert!(
             superblock.is_ok(),
             "Err({:?})",
