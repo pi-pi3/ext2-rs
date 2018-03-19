@@ -5,3 +5,11 @@ pub enum Error {
     OutOfBounds(usize),
     BadBlockGroupCount(u32, u32),
 }
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Error {
+        unreachable!()
+    }
+}
+
+pub enum Infallible {}
