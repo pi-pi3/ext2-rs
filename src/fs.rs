@@ -55,7 +55,8 @@ where
         })
     }
 
-    pub fn update_global(&mut self) -> Result<(), Error> {
+    #[allow(dead_code)]
+    fn update_global(&mut self) -> Result<(), Error> {
         // superblock
         {
             let slice = BufferSlice::from_cast(
@@ -78,7 +79,8 @@ where
         Ok(())
     }
 
-    pub fn update_inode(
+    #[allow(dead_code)]
+    fn update_inode(
         &mut self,
         &(ref inode, offset): &(Inode, usize),
     ) -> Result<(), Error> {
@@ -124,6 +126,7 @@ where
         &self.superblock.inner
     }
 
+    #[allow(dead_code)]
     fn superblock_mut(&mut self) -> &mut Superblock {
         &mut self.superblock.inner
     }
