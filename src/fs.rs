@@ -78,6 +78,48 @@ where
         Ok(())
     }
 
+    pub fn update_inode(
+        &mut self,
+        &(ref inode, offset): &(Inode, usize),
+    ) -> Result<(), Error> {
+        let slice = BufferSlice::from_cast(inode, offset);
+        let commit = slice.commit();
+        self.buffer.commit(commit).map_err(|err| Error::from(err))
+    }
+
+    pub fn inode_nth(
+        &self,
+        block_group: usize,
+        index: usize,
+    ) -> Option<(Inode, usize)> {
+        self.inodes_nth(block_group, index)
+            .and_then(|mut inodes| inodes.next())
+    }
+
+    pub fn inodes<'a>(&'a self, block_group: usize) -> Inodes<'a, B> {
+        self.inodes_nth(block_group, 1).unwrap()
+    }
+
+    pub fn inodes_nth<'a>(
+        &'a self,
+        block_group: usize,
+        index: usize,
+    ) -> Option<Inodes<'a, B>> {
+        assert!(index > 0, "inodes are 1-indexed");
+        if index > self.inodes_count() {
+            None
+        } else {
+            Some(Inodes {
+                buffer: &self.buffer,
+                block_size: self.block_size(),
+                inode_size: self.inode_size(),
+                inodes_block: self.inodes_block(block_group),
+                inodes_count: self.inodes_count(),
+                index,
+            })
+        }
+    }
+
     fn superblock(&self) -> &Superblock {
         &self.superblock.inner
     }
@@ -99,6 +141,14 @@ where
         }
     }
 
+    pub fn inodes_block(&self, block_group: usize) -> usize {
+        self.block_groups.inner[block_group].inode_table_block as _
+    }
+
+    pub fn inodes_count(&self) -> usize {
+        self.superblock().inodes_per_group as _
+    }
+
     pub fn block_group_count(&self) -> Result<usize, Error> {
         self.superblock()
             .block_group_count()
@@ -116,6 +166,35 @@ where
 
     pub fn block_size(&self) -> usize {
         self.superblock().block_size()
+    }
+}
+
+pub struct Inodes<'a, B: 'a + Buffer<u8>> {
+    buffer: &'a B,
+    block_size: usize,
+    inode_size: usize,
+    inodes_block: usize,
+    inodes_count: usize,
+    index: usize,
+}
+
+impl<'a, B: 'a + Buffer<u8>> Iterator for Inodes<'a, B>
+where
+    Error: From<B::Error>,
+{
+    type Item = (Inode, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.inodes_count {
+            let offset = self.inodes_block * self.block_size
+                + (self.index - 1) * self.inode_size;
+            self.index += 1;
+            unsafe {
+                Inode::find_inode(self.buffer, offset, self.inode_size).ok()
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -150,5 +229,24 @@ mod tests {
         let vers = fs.version();
         println!("version: {}.{}", vers.0, vers.1);
         assert_eq!(128, fs.inode_size());
+    }
+
+    #[test]
+    fn inodes() {
+        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let fs = Ext2::new(file);
+
+        assert!(
+            fs.is_ok(),
+            "Err({:?})",
+            fs.err().unwrap_or_else(|| unreachable!()),
+        );
+
+        let fs = fs.unwrap();
+
+        let inodes = fs.inodes(0).filter(|inode| inode.0.in_use());
+        for inode in inodes {
+            println!("{:?}", inode);
+        }
     }
 }
