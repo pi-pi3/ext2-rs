@@ -1,7 +1,9 @@
 use core::mem;
-use core::slice;
+
+use alloc::Vec;
 
 use error::Error;
+use buffer::Buffer;
 
 /// The Block Group Descriptor Table contains a descriptor for each block group
 /// within the file system. The number of block groups within the file system,
@@ -16,6 +18,7 @@ use error::Error;
 /// Remember that blocks are numbered starting at 0, and that block numbers
 /// don't usually correspond to physical block addresses.
 #[repr(C, packed)]
+#[derive(Clone, Copy)]
 pub struct BlockGroupDescriptor {
     /// Block address of block usage bitmap
     pub block_usage_addr: u32,
@@ -34,21 +37,47 @@ pub struct BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub unsafe fn find_descriptor_table<'a>(
-        haystack: &'a mut [u8],
-        offset: isize,
+    pub unsafe fn find_descriptor<'a, E>(
+        haystack: &'a Buffer<u8, Error = E>,
+        offset: usize,
+    ) -> Result<(BlockGroupDescriptor, usize), Error>
+    where
+        Error: From<E>,
+    {
+        let end = offset + mem::size_of::<BlockGroupDescriptor>();
+        if haystack.len() < end {
+            return Err(Error::OutOfBounds(end));
+        }
+
+        let descr = haystack
+            .slice_unchecked(offset..end)
+            .dynamic_cast::<BlockGroupDescriptor>();
+
+        Ok(descr)
+    }
+
+    pub fn find_descriptor_table<'a, E>(
+        haystack: &'a Buffer<u8, Error = E>,
         count: usize,
-    ) -> Result<&'a mut [BlockGroupDescriptor], Error> {
-        let offset = (2048 + offset) as usize;
+    ) -> Result<(Vec<BlockGroupDescriptor>, usize), Error>
+    where
+        Error: From<E>,
+    {
+        let offset = 2048; // TODO: this assumes a block size
         let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
         if haystack.len() < end {
             return Err(Error::OutOfBounds(end));
         }
 
-        let ptr = haystack.as_mut_ptr().offset(offset as isize)
-            as *mut BlockGroupDescriptor;
-        let slice = slice::from_raw_parts_mut(ptr, count);
-        Ok(slice)
+        let mut vec = Vec::with_capacity(count);
+        for i in 0..count {
+            let offset = offset + i * mem::size_of::<BlockGroupDescriptor>();
+            vec.push(unsafe {
+                BlockGroupDescriptor::find_descriptor(haystack, offset)?.0
+            });
+        }
+
+        Ok((vec, offset))
     }
 }
 
@@ -58,17 +87,14 @@ mod tests {
 
     #[test]
     fn find() {
-        let mut buffer = vec![0_u8; 4096];
-        let addr = &buffer[2048] as *const _ as usize;
-        // magic
-        let table = unsafe {
-            BlockGroupDescriptor::find_descriptor_table(&mut buffer, 0, 0)
-        };
+        let buffer = vec![0_u8; 4096];
+        let table = BlockGroupDescriptor::find_descriptor_table(&buffer, 8);
         assert!(
             table.is_ok(),
             "Err({:?})",
             table.err().unwrap_or_else(|| unreachable!()),
         );
-        assert_eq!(table.unwrap().as_ptr() as usize, addr);
+        let table = table.unwrap_or_else(|_| unreachable!());
+        assert_eq!(table.0.len(), 8);
     }
 }
