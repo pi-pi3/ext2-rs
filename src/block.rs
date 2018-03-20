@@ -43,6 +43,7 @@ pub struct Address<S: Size> {
 
 impl<S: Size> Address<S> {
     pub unsafe fn new_unchecked(block: usize, offset: usize) -> Address<S> {
+        assert!(offset < S::SIZE, "offset out of block bounds");
         let _phantom = PhantomData;
         Address {
             block,
