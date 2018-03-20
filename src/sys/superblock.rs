@@ -194,11 +194,11 @@ impl Debug for Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<'a, E>(
-        haystack: &'a Buffer<u8, Error = E>,
+    pub unsafe fn find<B: Buffer<u8, usize>>(
+        haystack: &B,
     ) -> Result<(Superblock, usize), Error>
     where
-        Error: From<E>,
+        Error: From<B::Error>,
     {
         let offset = 1024;
         let end = offset + mem::size_of::<Superblock>();

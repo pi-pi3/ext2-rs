@@ -11,23 +11,24 @@ use error::Infallible;
 pub mod length;
 use self::length::Length;
 
-pub trait Buffer<T>
+pub trait Buffer<T, Idx>
 where
     [T]: ToOwned,
+    Idx: PartialEq + PartialOrd,
 {
     type Error;
 
-    fn len(&self) -> Length;
+    fn len(&self) -> Length<Idx>;
     fn commit(
         &mut self,
         slice: Option<BufferCommit<T>>,
     ) -> Result<(), Self::Error>;
     unsafe fn slice_unchecked<'a>(
         &'a self,
-        range: Range<usize>,
+        range: Range<Idx>,
     ) -> BufferSlice<'a, T>;
 
-    fn slice<'a>(&'a self, range: Range<usize>) -> Option<BufferSlice<'a, T>> {
+    fn slice<'a>(&'a self, range: Range<Idx>) -> Option<BufferSlice<'a, T>> {
         if self.len() >= range.end && self.len() > range.start {
             unsafe { Some(self.slice_unchecked(range)) }
         } else {
@@ -214,14 +215,14 @@ impl<T> DerefMut for BufferCommit<T> {
 
 macro_rules! impl_slice {
     (@inner $buffer:ty $( , $lt:lifetime )* ) => {
-        impl<$( $lt, )* T> Buffer<T> for $buffer
+        impl<$( $lt, )* T> Buffer<T, usize> for $buffer
         where
             T: Clone,
             [T]: ToOwned,
         {
             type Error = Infallible;
 
-            fn len(&self) -> Length {
+            fn len(&self) -> Length<usize> {
                 Length::Bounded(<Self as AsRef<[T]>>::as_ref(self).len())
             }
 
@@ -272,10 +273,10 @@ mod file {
     use super::{Buffer, BufferCommit, BufferSlice};
     use super::length::Length;
 
-    impl Buffer<u8> for RefCell<File> {
+    impl Buffer<u8, usize> for RefCell<File> {
         type Error = io::Error;
 
-        fn len(&self) -> Length {
+        fn len(&self) -> Length<usize> {
             Length::Bounded(
                 self.borrow()
                     .metadata()

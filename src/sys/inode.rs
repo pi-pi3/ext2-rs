@@ -96,13 +96,13 @@ impl Debug for Inode {
 }
 
 impl Inode {
-    pub unsafe fn find_inode<'a, E>(
-        haystack: &'a Buffer<u8, Error = E>,
+    pub unsafe fn find_inode<B: Buffer<u8, usize>>(
+        haystack: &B,
         offset: usize,
         size: usize,
     ) -> Result<(Inode, usize), Error>
     where
-        Error: From<E>,
+        Error: From<B::Error>,
     {
         if size != mem::size_of::<Inode>() {
             unimplemented!("inodes with a size != 128");

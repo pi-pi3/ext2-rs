@@ -51,12 +51,12 @@ impl Debug for BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub unsafe fn find_descriptor<'a, E>(
-        haystack: &'a Buffer<u8, Error = E>,
+    pub unsafe fn find_descriptor<B: Buffer<u8, usize>>(
+        haystack: &B,
         offset: usize,
     ) -> Result<(BlockGroupDescriptor, usize), Error>
     where
-        Error: From<E>,
+        Error: From<B::Error>,
     {
         let end = offset + mem::size_of::<BlockGroupDescriptor>();
         if haystack.len() < end {
@@ -70,13 +70,13 @@ impl BlockGroupDescriptor {
         Ok(descr)
     }
 
-    pub unsafe fn find_descriptor_table<'a, E>(
-        haystack: &'a Buffer<u8, Error = E>,
+    pub unsafe fn find_descriptor_table<B: Buffer<u8, usize>>(
+        haystack: &B,
         offset: usize,
         count: usize,
     ) -> Result<(Vec<BlockGroupDescriptor>, usize), Error>
     where
-        Error: From<E>,
+        Error: From<B::Error>,
     {
         let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
         if haystack.len() < end {

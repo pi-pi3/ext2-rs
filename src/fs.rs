@@ -2,6 +2,7 @@ use core::mem;
 use alloc::Vec;
 
 use error::Error;
+use block::Address; // TODO
 use buffer::{Buffer, BufferSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
@@ -20,13 +21,13 @@ impl<T> From<(T, usize)> for Struct<T> {
 }
 
 /// Safe wrapper for raw sys structs
-pub struct Ext2<B: Buffer<u8>> {
+pub struct Ext2<B: Buffer<u8, usize>> {
     buffer: B,
     superblock: Struct<Superblock>,
     block_groups: Struct<Vec<BlockGroupDescriptor>>,
 }
 
-impl<B: Buffer<u8>> Ext2<B>
+impl<B: Buffer<u8, usize>> Ext2<B>
 where
     Error: From<B::Error>,
 {
@@ -164,7 +165,7 @@ where
     }
 }
 
-pub struct Inodes<'a, B: 'a + Buffer<u8>> {
+pub struct Inodes<'a, B: 'a + Buffer<u8, usize>> {
     buffer: &'a B,
     block_groups: &'a [BlockGroupDescriptor],
     block_size: usize,
@@ -174,7 +175,7 @@ pub struct Inodes<'a, B: 'a + Buffer<u8>> {
     index: usize,
 }
 
-impl<'a, B: 'a + Buffer<u8>> Iterator for Inodes<'a, B>
+impl<'a, B: 'a + Buffer<u8, usize>> Iterator for Inodes<'a, B>
 where
     Error: From<B::Error>,
 {
