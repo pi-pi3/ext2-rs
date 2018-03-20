@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
+use core::fmt::{self, Debug, Display, LowerHex};
 
 pub trait Size {
     // log_block_size = log_2(block_size) - 10
@@ -33,7 +34,7 @@ impl Size for Size8192 {
     const LOG_SIZE: u32 = 3;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Address<S: Size> {
     block: usize,
     offset: usize,
@@ -64,6 +65,28 @@ impl<S: Size> Address<S> {
 
     pub fn offset(&self) -> usize {
         self.offset
+    }
+}
+
+impl<S: Size> Debug for Address<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let name = format!("Address<{}>", S::SIZE);
+        f.debug_struct(&name)
+            .field("block", &self.block)
+            .field("offset", &self.offset)
+            .finish()
+    }
+}
+
+impl<S: Size> Display for Address<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.block, self.offset)
+    }
+}
+
+impl<S: Size> LowerHex for Address<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x}:{:x}", self.block, self.offset)
     }
 }
 

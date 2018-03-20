@@ -4,6 +4,7 @@
 #![feature(macro_lifetime_matcher)]
 #![cfg_attr(all(not(test), feature = "no_std"), no_std)]
 
+#[macro_use]
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
