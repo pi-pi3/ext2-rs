@@ -171,7 +171,7 @@ where
     }
 
     pub fn log_block_size(&self) -> u32 {
-        self.superblock().log_block_size
+        self.superblock().log_block_size + 10
     }
 }
 
