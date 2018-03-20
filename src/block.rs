@@ -42,15 +42,19 @@ pub struct Address<S: Size> {
 }
 
 impl<S: Size> Address<S> {
-    pub fn new(block: usize, offset: usize) -> Address<S> {
-        let block = block + (offset >> (S::LOG_SIZE + 10));
-        let offset = offset & S::OFFSET_MASK;
+    pub unsafe fn new_unchecked(block: usize, offset: usize) -> Address<S> {
         let _phantom = PhantomData;
         Address {
             block,
             offset,
             _phantom,
         }
+    }
+
+    pub fn new(block: usize, offset: isize) -> Address<S> {
+        let block = (block as isize + (offset >> (S::LOG_SIZE + 10))) as usize;
+        let offset = offset.abs() as usize & S::OFFSET_MASK;
+        unsafe { Address::new_unchecked(block, offset) }
     }
 
     pub fn into_index(&self) -> Option<usize> {
@@ -102,29 +106,27 @@ impl<S: Size> From<usize> for Address<S> {
     fn from(idx: usize) -> Address<S> {
         let block = idx >> (S::LOG_SIZE + 10);
         let offset = idx & S::OFFSET_MASK;
-        Address::new(block, offset)
+        Address::new(block, offset as isize)
     }
 }
 
 impl<S: Size> Add for Address<S> {
     type Output = Address<S>;
     fn add(self, rhs: Address<S>) -> Address<S> {
-        let offset = self.offset + rhs.offset;
-        let block = offset >> (S::LOG_SIZE + 10);
-        let offset = offset & S::OFFSET_MASK;
-        Address::new(self.block + rhs.block + block, offset)
+        Address::new(
+            self.block + rhs.block,
+            (self.offset + rhs.offset) as isize,
+        )
     }
 }
 
 impl<S: Size> Sub for Address<S> {
     type Output = Address<S>;
-    fn sub(mut self, rhs: Address<S>) -> Address<S> {
-        if rhs.offset > self.offset {
-            self.offset += S::SIZE;
-            self.block -= 1;
-        }
-        let offset = self.offset - rhs.offset;
-        Address::new(self.block - rhs.block, offset)
+    fn sub(self, rhs: Address<S>) -> Address<S> {
+        Address::new(
+            self.block + rhs.block,
+            self.offset as isize - rhs.offset as isize,
+        )
     }
 }
 
@@ -137,6 +139,11 @@ mod tests {
         assert_eq!(
             Address::<Size1024>::new(0, 1024),
             Address::<Size1024>::new(1, 0),
+        );
+
+        assert_eq!(
+            Address::<Size1024>::new(2, -512),
+            Address::<Size1024>::new(1, 512),
         );
 
         let a = Address::<Size2048>::new(0, 1024);
