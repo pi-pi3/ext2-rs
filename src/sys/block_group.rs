@@ -4,6 +4,7 @@ use core::fmt::{self, Debug};
 use alloc::Vec;
 
 use error::Error;
+use block::{Address, Size};
 use buffer::Buffer;
 
 /// The Block Group Descriptor Table contains a descriptor for each block group
@@ -51,16 +52,24 @@ impl Debug for BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub unsafe fn find_descriptor<B: Buffer<u8, usize>>(
+    pub unsafe fn find_descriptor<
+        S: Size + Copy + PartialOrd,
+        B: Buffer<u8, Address<S>>,
+    >(
         haystack: &B,
-        offset: usize,
-    ) -> Result<(BlockGroupDescriptor, usize), Error>
+        offset: Address<S>,
+    ) -> Result<(BlockGroupDescriptor, Address<S>), Error>
     where
         Error: From<B::Error>,
     {
-        let end = offset + mem::size_of::<BlockGroupDescriptor>();
+        let end =
+            offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         if haystack.len() < end {
-            return Err(Error::OutOfBounds(end));
+            return Err(Error::AddressOutOfBounds(
+                end.block(),
+                end.offset(),
+                end.block_size(),
+            ));
         }
 
         let descr = haystack
@@ -70,22 +79,31 @@ impl BlockGroupDescriptor {
         Ok(descr)
     }
 
-    pub unsafe fn find_descriptor_table<B: Buffer<u8, usize>>(
+    pub unsafe fn find_descriptor_table<
+        S: Size + Copy + PartialOrd,
+        B: Buffer<u8, Address<S>>,
+    >(
         haystack: &B,
-        offset: usize,
+        offset: Address<S>,
         count: usize,
-    ) -> Result<(Vec<BlockGroupDescriptor>, usize), Error>
+    ) -> Result<(Vec<BlockGroupDescriptor>, Address<S>), Error>
     where
         Error: From<B::Error>,
     {
-        let end = offset + count * mem::size_of::<BlockGroupDescriptor>();
+        let end = offset
+            + Address::from(count * mem::size_of::<BlockGroupDescriptor>());
         if haystack.len() < end {
-            return Err(Error::OutOfBounds(end));
+            return Err(Error::AddressOutOfBounds(
+                end.block(),
+                end.offset(),
+                end.block_size(),
+            ));
         }
 
         let mut vec = Vec::with_capacity(count);
         for i in 0..count {
-            let offset = offset + i * mem::size_of::<BlockGroupDescriptor>();
+            let offset = offset
+                + Address::from(i * mem::size_of::<BlockGroupDescriptor>());
             vec.push({
                 BlockGroupDescriptor::find_descriptor(haystack, offset)?.0
             });
@@ -97,13 +115,18 @@ impl BlockGroupDescriptor {
 
 #[cfg(test)]
 mod tests {
+    use block::{Address, Size512};
     use super::*;
 
     #[test]
     fn find() {
         let buffer = vec![0_u8; 4096];
         let table = unsafe {
-            BlockGroupDescriptor::find_descriptor_table(&buffer, 2048, 8)
+            BlockGroupDescriptor::find_descriptor_table(
+                &buffer,
+                Address::<Size512>::new(4, 0),
+                8,
+            )
         };
         assert!(
             table.is_ok(),

@@ -1,41 +1,45 @@
 use core::mem;
+use core::marker::PhantomData;
+
 use alloc::Vec;
 
 use error::Error;
-use block::Address; // TODO
+use block::{Address, Size};
 use buffer::{Buffer, BufferSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
 use sys::inode::Inode;
 
-struct Struct<T> {
+struct Struct<T, S: Size> {
     pub inner: T,
-    pub offset: usize,
+    pub offset: Address<S>,
 }
 
-impl<T> From<(T, usize)> for Struct<T> {
+impl<T, S: Size> From<(T, Address<S>)> for Struct<T, S> {
     #[inline]
-    fn from((inner, offset): (T, usize)) -> Struct<T> {
+    fn from((inner, offset): (T, Address<S>)) -> Struct<T, S> {
         Struct { inner, offset }
     }
 }
 
 /// Safe wrapper for raw sys structs
-pub struct Ext2<B: Buffer<u8, usize>> {
+pub struct Ext2<S: Size, B: Buffer<u8, Address<S>>> {
     buffer: B,
-    superblock: Struct<Superblock>,
-    block_groups: Struct<Vec<BlockGroupDescriptor>>,
+    superblock: Struct<Superblock, S>,
+    block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
-impl<B: Buffer<u8, usize>> Ext2<B>
+impl<S: Size + Copy, B: Buffer<u8, Address<S>>> Ext2<S, B>
 where
     Error: From<B::Error>,
 {
-    pub fn new(buffer: B) -> Result<Ext2<B>, Error> {
+    pub fn new(buffer: B) -> Result<Ext2<S, B>, Error> {
         let superblock = unsafe { Struct::from(Superblock::find(&buffer)?) };
-        let block_size = superblock.inner.block_size();
-        let block_groups_offset =
-            (superblock.inner.first_data_block as usize + 1) * block_size;
+        let block_groups_offset = Address::with_block_size(
+            superblock.inner.first_data_block as usize + 1,
+            0,
+            superblock.inner.log_block_size + 10,
+        );
         let block_groups_count = superblock
             .inner
             .block_group_count()
@@ -74,7 +78,8 @@ where
             let slice = BufferSlice::from_cast(descr, offset);
             let commit = slice.commit();
             self.buffer.commit(commit).map_err(|err| Error::from(err))?;
-            offset += mem::size_of::<BlockGroupDescriptor>();
+            offset =
+                offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         }
 
         Ok(())
@@ -83,35 +88,36 @@ where
     #[allow(dead_code)]
     fn update_inode(
         &mut self,
-        &(ref inode, offset): &(Inode, usize),
+        &(ref inode, offset): &(Inode, Address<S>),
     ) -> Result<(), Error> {
         let slice = BufferSlice::from_cast(inode, offset);
         let commit = slice.commit();
         self.buffer.commit(commit).map_err(|err| Error::from(err))
     }
 
-    pub fn root_inode(&self) -> (Inode, usize) {
+    pub fn root_inode(&self) -> (Inode, Address<S>) {
         self.inode_nth(2).unwrap()
     }
 
-    pub fn inode_nth(&self, index: usize) -> Option<(Inode, usize)> {
+    pub fn inode_nth(&self, index: usize) -> Option<(Inode, Address<S>)> {
         self.inodes_nth(index).next()
     }
 
-    pub fn inodes<'a>(&'a self) -> Inodes<'a, B> {
+    pub fn inodes<'a>(&'a self) -> Inodes<'a, S, B> {
         self.inodes_nth(1)
     }
 
-    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, B> {
+    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, S, B> {
         assert!(index > 0, "inodes are 1-indexed");
         Inodes {
             buffer: &self.buffer,
             block_groups: &self.block_groups.inner,
-            block_size: self.block_size(),
+            log_block_size: self.log_block_size(),
             inode_size: self.inode_size(),
             inodes_per_group: self.inodes_count(),
             inodes_count: self.total_inodes_count(),
             index,
+            _phantom: PhantomData,
         }
     }
 
@@ -163,23 +169,29 @@ where
     pub fn block_size(&self) -> usize {
         self.superblock().block_size()
     }
+
+    pub fn log_block_size(&self) -> u32 {
+        self.superblock().log_block_size
+    }
 }
 
-pub struct Inodes<'a, B: 'a + Buffer<u8, usize>> {
+pub struct Inodes<'a, S: Size, B: 'a + Buffer<u8, Address<S>>> {
     buffer: &'a B,
     block_groups: &'a [BlockGroupDescriptor],
-    block_size: usize,
+    log_block_size: u32,
     inode_size: usize,
     inodes_per_group: usize,
     inodes_count: usize,
     index: usize,
+    _phantom: PhantomData<S>,
 }
 
-impl<'a, B: 'a + Buffer<u8, usize>> Iterator for Inodes<'a, B>
+impl<'a, S: Size + Copy, B: 'a + Buffer<u8, Address<S>>> Iterator
+    for Inodes<'a, S, B>
 where
     Error: From<B::Error>,
 {
-    type Item = (Inode, usize);
+    type Item = (Inode, Address<S>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.inodes_count {
@@ -190,8 +202,11 @@ where
             let inodes_block =
                 self.block_groups[block_group].inode_table_block as usize;
 
-            let offset =
-                inodes_block * self.block_size + index * self.inode_size;
+            let offset = Address::with_block_size(
+                inodes_block,
+                index * self.inode_size,
+                self.log_block_size,
+            );
             unsafe {
                 Inode::find_inode(self.buffer, offset, self.inode_size).ok()
             }
@@ -206,6 +221,7 @@ mod tests {
     use std::fs::File;
     use std::cell::RefCell;
 
+    use block::{Address, Size512};
     use buffer::Buffer;
 
     use super::Ext2;
@@ -213,13 +229,21 @@ mod tests {
     #[test]
     fn file_len() {
         let file = RefCell::new(File::open("ext2.img").unwrap());
-        assert_eq!(unsafe { file.slice_unchecked(1024..2048).len() }, 1024);
+        assert_eq!(
+            unsafe {
+                file.slice_unchecked(
+                    Address::<Size512>::from(1024_usize)
+                        ..Address::<Size512>::from(2048_usize),
+                ).len()
+            },
+            1024
+        );
     }
 
     #[test]
     fn file() {
         let file = RefCell::new(File::open("ext2.img").unwrap());
-        let fs = Ext2::new(file);
+        let fs = Ext2::<Size512, _>::new(file);
 
         assert!(
             fs.is_ok(),
@@ -237,7 +261,7 @@ mod tests {
     #[test]
     fn inodes() {
         let file = RefCell::new(File::open("ext2.img").unwrap());
-        let fs = Ext2::new(file);
+        let fs = Ext2::<Size512, _>::new(file);
 
         assert!(
             fs.is_ok(),

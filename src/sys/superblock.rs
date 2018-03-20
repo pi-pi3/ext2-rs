@@ -2,6 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
+use block::{Address, Size};
 use buffer::Buffer;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
@@ -194,16 +195,20 @@ impl Debug for Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<B: Buffer<u8, usize>>(
+    pub unsafe fn find<S: Size + Copy + PartialOrd, B: Buffer<u8, Address<S>>>(
         haystack: &B,
-    ) -> Result<(Superblock, usize), Error>
+    ) -> Result<(Superblock, Address<S>), Error>
     where
         Error: From<B::Error>,
     {
-        let offset = 1024;
-        let end = offset + mem::size_of::<Superblock>();
+        let offset = Address::from(1024_usize);
+        let end = offset + Address::from(mem::size_of::<Superblock>());
         if haystack.len() < end {
-            return Err(Error::OutOfBounds(end));
+            return Err(Error::AddressOutOfBounds(
+                end.block(),
+                end.offset(),
+                end.block_size(),
+            ));
         }
 
         let superblock = {
@@ -291,6 +296,7 @@ bitflags! {
 
 #[cfg(test)]
 mod tests {
+    use block::Size512;
     use super::*;
 
     #[test]
@@ -299,7 +305,7 @@ mod tests {
         // magic
         buffer[1024 + 56] = EXT2_MAGIC as u8;
         buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
-        let superblock = unsafe { Superblock::find(&buffer) };
+        let superblock = unsafe { Superblock::find::<Size512, _>(&buffer) };
         assert!(
             superblock.is_ok(),
             "Err({:?})",
@@ -314,7 +320,7 @@ mod tests {
         use std::fs::File;
 
         let file = RefCell::new(File::open("ext2.img").unwrap());
-        let superblock = unsafe { Superblock::find(&file) };
+        let superblock = unsafe { Superblock::find::<Size512, _>(&file) };
         assert!(
             superblock.is_ok(),
             "Err({:?})",

@@ -4,39 +4,33 @@ use core::ops::{Add, Sub};
 use core::fmt::{self, Debug, Display, LowerHex};
 use core::iter::Step;
 
-pub trait Size {
-    // log_block_size = log_2(block_size) - 10
-    // i.e. block_size = 1024 << log_block_size
+pub trait Size: PartialOrd {
+    // log_block_size = log_2(block_size)
     const LOG_SIZE: u32;
-    const SIZE: usize = 1024 << Self::LOG_SIZE;
+    const SIZE: usize = 1 << Self::LOG_SIZE;
     const OFFSET_MASK: usize = Self::SIZE - 1;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Size1024;
-impl Size for Size1024 {
-    const LOG_SIZE: u32 = 0;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Size512;
+impl Size for Size512 {
+    const LOG_SIZE: u32 = 9;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size2048;
 impl Size for Size2048 {
-    const LOG_SIZE: u32 = 1;
+    const LOG_SIZE: u32 = 11;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size4096;
 impl Size for Size4096 {
-    const LOG_SIZE: u32 = 2;
+    const LOG_SIZE: u32 = 12;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Size8192;
-impl Size for Size8192 {
-    const LOG_SIZE: u32 = 3;
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Address in a physical sector
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Address<S: Size> {
     block: usize,
     offset: usize,
@@ -55,14 +49,30 @@ impl<S: Size> Address<S> {
     }
 
     pub fn new(block: usize, offset: isize) -> Address<S> {
-        let block = (block as isize + (offset >> (S::LOG_SIZE + 10))) as usize;
+        let block = (block as isize + (offset >> S::LOG_SIZE)) as usize;
         let offset = offset.abs() as usize & S::OFFSET_MASK;
         unsafe { Address::new_unchecked(block, offset) }
     }
 
+    pub fn with_block_size(
+        block: usize,
+        offset: usize,
+        log_block_size: u32,
+    ) -> Address<S> {
+        let log_diff = log_block_size as isize - S::LOG_SIZE as isize;
+        let top_offset = offset >> S::LOG_SIZE;
+        let offset = offset >> log_diff;
+        let block = block << log_diff | top_offset;
+        Address::new(block, offset as isize)
+    }
+
+    pub fn index64(&self) -> u64 {
+        ((self.block as u64) << S::LOG_SIZE) + self.offset as u64
+    }
+
     pub fn into_index(&self) -> Option<usize> {
         self.block
-            .checked_shl(S::LOG_SIZE + 10)
+            .checked_shl(S::LOG_SIZE)
             .and_then(|block| block.checked_add(self.offset))
     }
 
@@ -137,9 +147,17 @@ impl<S: Size> LowerHex for Address<S> {
     }
 }
 
+impl<S: Size> From<u64> for Address<S> {
+    fn from(idx: u64) -> Address<S> {
+        let block = idx >> S::LOG_SIZE;
+        let offset = idx & S::OFFSET_MASK as u64;
+        Address::new(block as usize, offset as isize)
+    }
+}
+
 impl<S: Size> From<usize> for Address<S> {
     fn from(idx: usize) -> Address<S> {
-        let block = idx >> (S::LOG_SIZE + 10);
+        let block = idx >> S::LOG_SIZE;
         let offset = idx & S::OFFSET_MASK;
         Address::new(block, offset as isize)
     }
@@ -172,13 +190,13 @@ mod tests {
     #[test]
     fn arithmetic() {
         assert_eq!(
-            Address::<Size1024>::new(0, 1024),
-            Address::<Size1024>::new(1, 0),
+            Address::<Size512>::new(0, 512),
+            Address::<Size512>::new(1, 0),
         );
 
         assert_eq!(
-            Address::<Size1024>::new(2, -512),
-            Address::<Size1024>::new(1, 512),
+            Address::<Size512>::new(2, -256),
+            Address::<Size512>::new(1, 256),
         );
 
         let a = Address::<Size2048>::new(0, 1024);
@@ -186,9 +204,9 @@ mod tests {
         assert_eq!(a + b, Address::<Size2048>::new(1, 0));
         assert_eq!((a + b).into_index(), Some(2048));
 
-        let a = Address::<Size1024>::new(0, 4096);
-        let b = Address::<Size1024>::new(0, 512);
-        assert_eq!(a - b, Address::<Size1024>::new(3, 512));
-        assert_eq!((a - b).into_index(), Some(3584));
+        let a = Address::<Size512>::new(0, 2048);
+        let b = Address::<Size512>::new(0, 256);
+        assert_eq!(a - b, Address::<Size512>::new(3, 256));
+        assert_eq!((a - b).into_index(), Some(1792));
     }
 }

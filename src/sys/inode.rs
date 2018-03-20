@@ -2,6 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
+use block::{Address, Size};
 use buffer::Buffer;
 
 /// An inode is a structure on the disk that represents a file, directory,
@@ -96,11 +97,14 @@ impl Debug for Inode {
 }
 
 impl Inode {
-    pub unsafe fn find_inode<B: Buffer<u8, usize>>(
+    pub unsafe fn find_inode<
+        S: Size + Copy + PartialOrd,
+        B: Buffer<u8, Address<S>>,
+    >(
         haystack: &B,
-        offset: usize,
+        offset: Address<S>,
         size: usize,
-    ) -> Result<(Inode, usize), Error>
+    ) -> Result<(Inode, Address<S>), Error>
     where
         Error: From<B::Error>,
     {
@@ -108,9 +112,13 @@ impl Inode {
             unimplemented!("inodes with a size != 128");
         }
 
-        let end = offset + size;
+        let end = offset + Address::from(size);
         if haystack.len() < end {
-            return Err(Error::OutOfBounds(end));
+            return Err(Error::AddressOutOfBounds(
+                end.block(),
+                end.offset(),
+                end.block_size(),
+            ));
         }
 
         let inode = haystack
