@@ -227,7 +227,8 @@ impl<T, Idx> DerefMut for VolumeCommit<T, Idx> {
 
 macro_rules! impl_slice {
     (@inner $volume:ty $( , $lt:lifetime )* ) => {
-        impl<$( $lt, )* S: Size + PartialOrd + Copy, T> Volume<T, Address<S>> for $volume
+        impl<$( $lt, )* S: Size + PartialOrd + Copy, T> Volume<T, Address<S>>
+            for $volume
         where
             T: Clone,
             [T]: ToOwned,
@@ -235,10 +236,15 @@ macro_rules! impl_slice {
             type Error = Infallible;
 
             fn len(&self) -> Length<Address<S>> {
-                Length::Bounded(Address::from(<Self as AsRef<[T]>>::as_ref(self).len()))
+                Length::Bounded(
+                    Address::from(<Self as AsRef<[T]>>::as_ref(self).len())
+                )
             }
 
-            fn commit(&mut self, slice: Option<VolumeCommit<T, Address<S>>>) -> Result<(), Infallible> {
+            fn commit(
+                &mut self,
+                slice: Option<VolumeCommit<T, Address<S>>>,
+            ) -> Result<(), Infallible> {
                 slice.map(|slice| {
                     let index = slice.at_index().index64() as usize;
                     let end = index + slice.as_ref().len();
@@ -256,7 +262,8 @@ macro_rules! impl_slice {
                 range: Range<Address<S>>,
             ) -> VolumeSlice<'a, T, Address<S>> {
                 let index = range.start;
-                let range = range.start.index64() as usize..range.end.index64() as usize;
+                let range = range.start.index64() as usize
+                    ..range.end.index64() as usize;
                 VolumeSlice::new(
                     <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range),
                     index,
