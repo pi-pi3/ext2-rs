@@ -12,7 +12,7 @@ use sector::{Address, Size};
 pub mod length;
 use self::length::Length;
 
-pub trait Buffer<T, Idx>
+pub trait Volume<T, Idx>
 where
     [T]: ToOwned,
     Idx: PartialEq + PartialOrd,
@@ -22,17 +22,17 @@ where
     fn len(&self) -> Length<Idx>;
     fn commit(
         &mut self,
-        slice: Option<BufferCommit<T, Idx>>,
+        slice: Option<VolumeCommit<T, Idx>>,
     ) -> Result<(), Self::Error>;
     unsafe fn slice_unchecked<'a>(
         &'a self,
         range: Range<Idx>,
-    ) -> BufferSlice<'a, T, Idx>;
+    ) -> VolumeSlice<'a, T, Idx>;
 
     fn slice<'a>(
         &'a self,
         range: Range<Idx>,
-    ) -> Option<BufferSlice<'a, T, Idx>> {
+    ) -> Option<VolumeSlice<'a, T, Idx>> {
         if self.len() >= range.end && self.len() > range.start {
             unsafe { Some(self.slice_unchecked(range)) }
         } else {
@@ -41,7 +41,7 @@ where
     }
 }
 
-pub struct BufferSlice<'a, T: 'a, Idx>
+pub struct VolumeSlice<'a, T: 'a, Idx>
 where
     [T]: ToOwned,
 {
@@ -49,39 +49,39 @@ where
     index: Idx,
 }
 
-impl<T, Idx: Default> BufferSlice<'static, T, Idx>
+impl<T, Idx: Default> VolumeSlice<'static, T, Idx>
 where
     [T]: ToOwned,
 {
-    pub fn with_static(inner: &'static [T]) -> BufferSlice<'static, T, Idx> {
-        BufferSlice {
+    pub fn with_static(inner: &'static [T]) -> VolumeSlice<'static, T, Idx> {
+        VolumeSlice {
             inner: Cow::Borrowed(inner),
             index: Idx::default(),
         }
     }
 }
 
-impl<T, Idx> BufferSlice<'static, T, Idx>
+impl<T, Idx> VolumeSlice<'static, T, Idx>
 where
     [T]: ToOwned,
 {
     pub fn new_owned(
         inner: <[T] as ToOwned>::Owned,
         index: Idx,
-    ) -> BufferSlice<'static, T, Idx> {
-        BufferSlice {
+    ) -> VolumeSlice<'static, T, Idx> {
+        VolumeSlice {
             inner: Cow::Owned(inner),
             index,
         }
     }
 }
 
-impl<'a, T, Idx> BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned,
 {
-    pub fn new(inner: &'a [T], index: Idx) -> BufferSlice<'a, T, Idx> {
-        BufferSlice {
+    pub fn new(inner: &'a [T], index: Idx) -> VolumeSlice<'a, T, Idx> {
+        VolumeSlice {
             inner: Cow::Borrowed(inner),
             index,
         }
@@ -99,7 +99,7 @@ where
     }
 }
 
-impl<'a, Idx: Copy> BufferSlice<'a, u8, Idx> {
+impl<'a, Idx: Copy> VolumeSlice<'a, u8, Idx> {
     pub unsafe fn dynamic_cast<T: Copy>(&self) -> (T, Idx) {
         assert!(self.inner.len() >= mem::size_of::<T>());
         let index = self.index;
@@ -110,28 +110,28 @@ impl<'a, Idx: Copy> BufferSlice<'a, u8, Idx> {
     pub fn from_cast<T: Copy>(
         cast: &'a T,
         index: Idx,
-    ) -> BufferSlice<'a, u8, Idx> {
+    ) -> VolumeSlice<'a, u8, Idx> {
         let len = mem::size_of::<T>();
         let ptr = cast as *const T as *const u8;
         let slice = unsafe { slice::from_raw_parts(ptr, len) };
-        BufferSlice::new(slice, index)
+        VolumeSlice::new(slice, index)
     }
 }
 
-impl<'a, T, Idx> BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned<Owned = Vec<T>>,
 {
-    pub fn commit(self) -> Option<BufferCommit<T, Idx>> {
+    pub fn commit(self) -> Option<VolumeCommit<T, Idx>> {
         if self.is_mutated() {
-            Some(BufferCommit::new(self.inner.into_owned(), self.index))
+            Some(VolumeCommit::new(self.inner.into_owned(), self.index))
         } else {
             None
         }
     }
 }
 
-impl<'a, T, Idx> AsRef<[T]> for BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> AsRef<[T]> for VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned,
 {
@@ -140,7 +140,7 @@ where
     }
 }
 
-impl<'a, T, Idx> AsMut<[T]> for BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> AsMut<[T]> for VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned,
     <[T] as ToOwned>::Owned: AsMut<[T]>,
@@ -150,7 +150,7 @@ where
     }
 }
 
-impl<'a, T, Idx> Deref for BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> Deref for VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned,
 {
@@ -161,7 +161,7 @@ where
     }
 }
 
-impl<'a, T, Idx> DerefMut for BufferSlice<'a, T, Idx>
+impl<'a, T, Idx> DerefMut for VolumeSlice<'a, T, Idx>
 where
     [T]: ToOwned,
     <[T] as ToOwned>::Owned: AsMut<[T]>,
@@ -171,23 +171,23 @@ where
     }
 }
 
-pub struct BufferCommit<T, Idx> {
+pub struct VolumeCommit<T, Idx> {
     inner: Vec<T>,
     index: Idx,
 }
 
-impl<T, Idx: Default> BufferCommit<T, Idx> {
-    pub fn with_vec(inner: Vec<T>) -> BufferCommit<T, Idx> {
-        BufferCommit {
+impl<T, Idx: Default> VolumeCommit<T, Idx> {
+    pub fn with_vec(inner: Vec<T>) -> VolumeCommit<T, Idx> {
+        VolumeCommit {
             inner,
             index: Idx::default(),
         }
     }
 }
 
-impl<T, Idx> BufferCommit<T, Idx> {
-    pub fn new(inner: Vec<T>, index: Idx) -> BufferCommit<T, Idx> {
-        BufferCommit { inner, index }
+impl<T, Idx> VolumeCommit<T, Idx> {
+    pub fn new(inner: Vec<T>, index: Idx) -> VolumeCommit<T, Idx> {
+        VolumeCommit { inner, index }
     }
 
     pub fn into_inner(self) -> Vec<T> {
@@ -199,19 +199,19 @@ impl<T, Idx> BufferCommit<T, Idx> {
     }
 }
 
-impl<T, Idx> AsRef<[T]> for BufferCommit<T, Idx> {
+impl<T, Idx> AsRef<[T]> for VolumeCommit<T, Idx> {
     fn as_ref(&self) -> &[T] {
         self.inner.as_ref()
     }
 }
 
-impl<T, Idx> AsMut<[T]> for BufferCommit<T, Idx> {
+impl<T, Idx> AsMut<[T]> for VolumeCommit<T, Idx> {
     fn as_mut(&mut self) -> &mut [T] {
         self.inner.as_mut()
     }
 }
 
-impl<T, Idx> Deref for BufferCommit<T, Idx> {
+impl<T, Idx> Deref for VolumeCommit<T, Idx> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -219,15 +219,15 @@ impl<T, Idx> Deref for BufferCommit<T, Idx> {
     }
 }
 
-impl<T, Idx> DerefMut for BufferCommit<T, Idx> {
+impl<T, Idx> DerefMut for VolumeCommit<T, Idx> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
 }
 
 macro_rules! impl_slice {
-    (@inner $buffer:ty $( , $lt:lifetime )* ) => {
-        impl<$( $lt, )* S: Size + PartialOrd + Copy, T> Buffer<T, Address<S>> for $buffer
+    (@inner $volume:ty $( , $lt:lifetime )* ) => {
+        impl<$( $lt, )* S: Size + PartialOrd + Copy, T> Volume<T, Address<S>> for $volume
         where
             T: Clone,
             [T]: ToOwned,
@@ -238,7 +238,7 @@ macro_rules! impl_slice {
                 Length::Bounded(Address::from(<Self as AsRef<[T]>>::as_ref(self).len()))
             }
 
-            fn commit(&mut self, slice: Option<BufferCommit<T, Address<S>>>) -> Result<(), Infallible> {
+            fn commit(&mut self, slice: Option<VolumeCommit<T, Address<S>>>) -> Result<(), Infallible> {
                 slice.map(|slice| {
                     let index = slice.at_index().index64() as usize;
                     let end = index + slice.as_ref().len();
@@ -254,21 +254,21 @@ macro_rules! impl_slice {
             unsafe fn slice_unchecked<'a>(
                 &'a self,
                 range: Range<Address<S>>,
-            ) -> BufferSlice<'a, T, Address<S>> {
+            ) -> VolumeSlice<'a, T, Address<S>> {
                 let index = range.start;
                 let range = range.start.index64() as usize..range.end.index64() as usize;
-                BufferSlice::new(
+                VolumeSlice::new(
                     <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range),
                     index,
                 )
             }
         }
     };
-    ($buffer:ty) => {
-        impl_slice!(@inner $buffer);
+    ($volume:ty) => {
+        impl_slice!(@inner $volume);
     };
-    ($buffer:ty $( , $lt:lifetime )* ) => {
-        impl_slice!(@inner $buffer $( , $lt )* );
+    ($volume:ty $( , $lt:lifetime )* ) => {
+        impl_slice!(@inner $volume $( , $lt )* );
     };
 }
 
@@ -285,10 +285,10 @@ mod file {
 
     use sector::{Address, Size};
 
-    use super::{Buffer, BufferCommit, BufferSlice};
+    use super::{Volume, VolumeCommit, VolumeSlice};
     use super::length::Length;
 
-    impl<S: Size + PartialOrd + Copy> Buffer<u8, Address<S>> for RefCell<File> {
+    impl<S: Size + PartialOrd + Copy> Volume<u8, Address<S>> for RefCell<File> {
         type Error = io::Error;
 
         fn len(&self) -> Length<Address<S>> {
@@ -302,7 +302,7 @@ mod file {
 
         fn commit(
             &mut self,
-            slice: Option<BufferCommit<u8, Address<S>>>,
+            slice: Option<VolumeCommit<u8, Address<S>>>,
         ) -> Result<(), Self::Error> {
             slice
                 .map(|slice| {
@@ -320,7 +320,7 @@ mod file {
         unsafe fn slice_unchecked<'a>(
             &'a self,
             range: Range<Address<S>>,
-        ) -> BufferSlice<'a, u8, Address<S>> {
+        ) -> VolumeSlice<'a, u8, Address<S>> {
             let index = range.start;
             let len = range.end - range.start;
             let mut vec = Vec::with_capacity(len.index64() as usize);
@@ -330,15 +330,15 @@ mod file {
                 .seek(SeekFrom::Start(index.index64()))
                 .and_then(|_| refmut.read_exact(&mut vec[..]))
                 .unwrap_or_else(|err| {
-                    panic!("could't read from File Buffer: {:?}", err)
+                    panic!("could't read from File Volume: {:?}", err)
                 });
-            BufferSlice::new_owned(vec, index)
+            VolumeSlice::new_owned(vec, index)
         }
 
         fn slice<'a>(
             &'a self,
             range: Range<Address<S>>,
-        ) -> Option<BufferSlice<'a, u8, Address<S>>> {
+        ) -> Option<VolumeSlice<'a, u8, Address<S>>> {
             let index = range.start;
             let mut vec = Vec::with_capacity(
                 (range.end - range.start).index64() as usize,
@@ -347,7 +347,7 @@ mod file {
             refmut
                 .seek(SeekFrom::Start(index.index64()))
                 .and_then(|_| refmut.read_exact(&mut vec[..]))
-                .map(move |_| BufferSlice::new_owned(vec, index))
+                .map(move |_| VolumeSlice::new_owned(vec, index))
                 .ok()
         }
     }
@@ -359,10 +359,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn buffer() {
-        let mut buffer = vec![0; 1024];
+    fn volume() {
+        let mut volume = vec![0; 1024];
         let commit = {
-            let mut slice = buffer
+            let mut slice = volume
                 .slice(
                     Address::<Size512>::from(256_usize)
                         ..Address::<Size512>::from(512_usize),
@@ -371,9 +371,9 @@ mod tests {
             slice.iter_mut().for_each(|x| *x = 1);
             slice.commit()
         };
-        assert!(buffer.commit(commit).is_ok());
+        assert!(volume.commit(commit).is_ok());
 
-        for (i, &x) in buffer.iter().enumerate() {
+        for (i, &x) in volume.iter().enumerate() {
             if i < 256 || i >= 512 {
                 assert_eq!(x, 0);
             } else {

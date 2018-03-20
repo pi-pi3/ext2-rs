@@ -5,7 +5,7 @@ use alloc::Vec;
 
 use error::Error;
 use sector::{Address, Size};
-use buffer::Buffer;
+use volume::Volume;
 
 /// The Block Group Descriptor Table contains a descriptor for each block group
 /// within the file system. The number of block groups within the file system,
@@ -54,13 +54,13 @@ impl Debug for BlockGroupDescriptor {
 impl BlockGroupDescriptor {
     pub unsafe fn find_descriptor<
         S: Size + Copy + PartialOrd,
-        B: Buffer<u8, Address<S>>,
+        V: Volume<u8, Address<S>>,
     >(
-        haystack: &B,
+        haystack: &V,
         offset: Address<S>,
     ) -> Result<(BlockGroupDescriptor, Address<S>), Error>
     where
-        Error: From<B::Error>,
+        Error: From<V::Error>,
     {
         let end =
             offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
@@ -81,14 +81,14 @@ impl BlockGroupDescriptor {
 
     pub unsafe fn find_descriptor_table<
         S: Size + Copy + PartialOrd,
-        B: Buffer<u8, Address<S>>,
+        V: Volume<u8, Address<S>>,
     >(
-        haystack: &B,
+        haystack: &V,
         offset: Address<S>,
         count: usize,
     ) -> Result<(Vec<BlockGroupDescriptor>, Address<S>), Error>
     where
-        Error: From<B::Error>,
+        Error: From<V::Error>,
     {
         let end = offset
             + Address::from(count * mem::size_of::<BlockGroupDescriptor>());
@@ -120,10 +120,10 @@ mod tests {
 
     #[test]
     fn find() {
-        let buffer = vec![0_u8; 4096];
+        let volume = vec![0_u8; 4096];
         let table = unsafe {
             BlockGroupDescriptor::find_descriptor_table(
-                &buffer,
+                &volume,
                 Address::<Size512>::new(4, 0),
                 8,
             )

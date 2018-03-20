@@ -5,7 +5,7 @@ use alloc::Vec;
 
 use error::Error;
 use sector::{Address, Size};
-use buffer::{Buffer, BufferSlice};
+use volume::{Volume, VolumeSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
 use sys::inode::Inode;
@@ -23,18 +23,18 @@ impl<T, S: Size> From<(T, Address<S>)> for Struct<T, S> {
 }
 
 /// Safe wrapper for raw sys structs
-pub struct Ext2<S: Size, B: Buffer<u8, Address<S>>> {
-    buffer: B,
+pub struct Ext2<S: Size, V: Volume<u8, Address<S>>> {
+    volume: V,
     superblock: Struct<Superblock, S>,
     block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
-impl<S: Size + Copy, B: Buffer<u8, Address<S>>> Ext2<S, B>
+impl<S: Size + Copy, V: Volume<u8, Address<S>>> Ext2<S, V>
 where
-    Error: From<B::Error>,
+    Error: From<V::Error>,
 {
-    pub fn new(buffer: B) -> Result<Ext2<S, B>, Error> {
-        let superblock = unsafe { Struct::from(Superblock::find(&buffer)?) };
+    pub fn new(volume: V) -> Result<Ext2<S, V>, Error> {
+        let superblock = unsafe { Struct::from(Superblock::find(&volume)?) };
         let block_groups_offset = Address::with_block_size(
             superblock.inner.first_data_block as usize + 1,
             0,
@@ -47,14 +47,14 @@ where
             .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?;
         let block_groups = unsafe {
             BlockGroupDescriptor::find_descriptor_table(
-                &buffer,
+                &volume,
                 block_groups_offset,
                 block_groups_count,
             )?
         };
         let block_groups = Struct::from(block_groups);
         Ok(Ext2 {
-            buffer,
+            volume,
             superblock,
             block_groups,
         })
@@ -64,20 +64,20 @@ where
     fn update_global(&mut self) -> Result<(), Error> {
         // superblock
         {
-            let slice = BufferSlice::from_cast(
+            let slice = VolumeSlice::from_cast(
                 &self.superblock.inner,
                 self.superblock.offset,
             );
             let commit = slice.commit();
-            self.buffer.commit(commit).map_err(|err| Error::from(err))?;
+            self.volume.commit(commit).map_err(|err| Error::from(err))?;
         }
 
         // block group descriptors
         let mut offset = self.block_groups.offset;
         for descr in &self.block_groups.inner {
-            let slice = BufferSlice::from_cast(descr, offset);
+            let slice = VolumeSlice::from_cast(descr, offset);
             let commit = slice.commit();
-            self.buffer.commit(commit).map_err(|err| Error::from(err))?;
+            self.volume.commit(commit).map_err(|err| Error::from(err))?;
             offset =
                 offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         }
@@ -90,9 +90,9 @@ where
         &mut self,
         &(ref inode, offset): &(Inode, Address<S>),
     ) -> Result<(), Error> {
-        let slice = BufferSlice::from_cast(inode, offset);
+        let slice = VolumeSlice::from_cast(inode, offset);
         let commit = slice.commit();
-        self.buffer.commit(commit).map_err(|err| Error::from(err))
+        self.volume.commit(commit).map_err(|err| Error::from(err))
     }
 
     pub fn root_inode(&self) -> (Inode, Address<S>) {
@@ -103,14 +103,14 @@ where
         self.inodes_nth(index).next()
     }
 
-    pub fn inodes<'a>(&'a self) -> Inodes<'a, S, B> {
+    pub fn inodes<'a>(&'a self) -> Inodes<'a, S, V> {
         self.inodes_nth(1)
     }
 
-    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, S, B> {
+    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, S, V> {
         assert!(index > 0, "inodes are 1-indexed");
         Inodes {
-            buffer: &self.buffer,
+            volume: &self.volume,
             block_groups: &self.block_groups.inner,
             log_block_size: self.log_block_size(),
             inode_size: self.inode_size(),
@@ -175,8 +175,8 @@ where
     }
 }
 
-pub struct Inodes<'a, S: Size, B: 'a + Buffer<u8, Address<S>>> {
-    buffer: &'a B,
+pub struct Inodes<'a, S: Size, V: 'a + Volume<u8, Address<S>>> {
+    volume: &'a V,
     block_groups: &'a [BlockGroupDescriptor],
     log_block_size: u32,
     inode_size: usize,
@@ -186,10 +186,10 @@ pub struct Inodes<'a, S: Size, B: 'a + Buffer<u8, Address<S>>> {
     _phantom: PhantomData<S>,
 }
 
-impl<'a, S: Size + Copy, B: 'a + Buffer<u8, Address<S>>> Iterator
-    for Inodes<'a, S, B>
+impl<'a, S: Size + Copy, V: 'a + Volume<u8, Address<S>>> Iterator
+    for Inodes<'a, S, V>
 where
-    Error: From<B::Error>,
+    Error: From<V::Error>,
 {
     type Item = (Inode, Address<S>);
 
@@ -208,7 +208,7 @@ where
                 self.log_block_size,
             );
             unsafe {
-                Inode::find_inode(self.buffer, offset, self.inode_size).ok()
+                Inode::find_inode(self.volume, offset, self.inode_size).ok()
             }
         } else {
             None
@@ -222,7 +222,7 @@ mod tests {
     use std::cell::RefCell;
 
     use sector::{Address, Size512};
-    use buffer::Buffer;
+    use volume::Volume;
 
     use super::Ext2;
 

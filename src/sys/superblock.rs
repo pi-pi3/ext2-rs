@@ -3,7 +3,7 @@ use core::fmt::{self, Debug};
 
 use error::Error;
 use sector::{Address, Size};
-use buffer::Buffer;
+use volume::Volume;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
 /// volume
@@ -195,11 +195,11 @@ impl Debug for Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<S: Size + Copy + PartialOrd, B: Buffer<u8, Address<S>>>(
-        haystack: &B,
+    pub unsafe fn find<S: Size + Copy + PartialOrd, V: Volume<u8, Address<S>>>(
+        haystack: &V,
     ) -> Result<(Superblock, Address<S>), Error>
     where
-        Error: From<B::Error>,
+        Error: From<V::Error>,
     {
         let offset = Address::from(1024_usize);
         let end = offset + Address::from(mem::size_of::<Superblock>());
@@ -301,11 +301,11 @@ mod tests {
 
     #[test]
     fn find() {
-        let mut buffer = vec![0_u8; 4096];
+        let mut volume = vec![0_u8; 4096];
         // magic
-        buffer[1024 + 56] = EXT2_MAGIC as u8;
-        buffer[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
-        let superblock = unsafe { Superblock::find::<Size512, _>(&buffer) };
+        volume[1024 + 56] = EXT2_MAGIC as u8;
+        volume[1024 + 57] = (EXT2_MAGIC >> 8) as u8;
+        let superblock = unsafe { Superblock::find::<Size512, _>(&volume) };
         assert!(
             superblock.is_ok(),
             "Err({:?})",

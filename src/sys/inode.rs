@@ -3,7 +3,7 @@ use core::fmt::{self, Debug};
 
 use error::Error;
 use sector::{Address, Size};
-use buffer::Buffer;
+use volume::Volume;
 
 /// An inode is a structure on the disk that represents a file, directory,
 /// symbolic link, etc. Inodes do not contain the data of the file / directory /
@@ -99,14 +99,14 @@ impl Debug for Inode {
 impl Inode {
     pub unsafe fn find_inode<
         S: Size + Copy + PartialOrd,
-        B: Buffer<u8, Address<S>>,
+        V: Volume<u8, Address<S>>,
     >(
-        haystack: &B,
+        haystack: &V,
         offset: Address<S>,
         size: usize,
     ) -> Result<(Inode, Address<S>), Error>
     where
-        Error: From<B::Error>,
+        Error: From<V::Error>,
     {
         if size != mem::size_of::<Inode>() {
             unimplemented!("inodes with a size != 128");
