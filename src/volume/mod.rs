@@ -307,7 +307,6 @@ mod file {
             slice
                 .map(|slice| {
                     let index = *slice.at_index();
-                    let end = index + Address::from(slice.as_ref().len());
                     let mut refmut = self.borrow_mut();
                     refmut
                         .seek(SeekFrom::Start(index.index64()))

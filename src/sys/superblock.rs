@@ -314,7 +314,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(unused_unsafe)]
     fn superblock() {
         use std::cell::RefCell;
         use std::fs::File;
