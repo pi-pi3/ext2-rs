@@ -62,14 +62,17 @@ impl<S: Size> Address<S> {
 
     pub fn with_block_size(
         block: usize,
-        offset: usize,
+        offset: isize,
         log_block_size: u32,
     ) -> Address<S> {
+        let block = (block as isize + (offset >> log_block_size)) as usize;
+        let offset = offset.abs() as usize & ((1 << log_block_size) - 1);
+
         let log_diff = log_block_size as isize - S::LOG_SIZE as isize;
         let top_offset = offset >> S::LOG_SIZE;
-        let offset = offset & ((1 << log_block_size) - 1);
+        let offset = offset & ((1 << S::LOG_SIZE) - 1);
         let sector = block << log_diff | top_offset;
-        Address::new(sector, offset as isize)
+        unsafe { Address::new_unchecked(sector, offset) }
     }
 
     pub fn index64(&self) -> u64 {
@@ -203,6 +206,14 @@ mod tests {
         assert_eq!(
             Address::<Size512>::with_block_size(1, 256, 10).into_index(),
             Some(1024 + 256)
+        );
+        assert_eq!(
+            Address::<Size512>::with_block_size(2, 0, 10).into_index(),
+            Some(2048)
+        );
+        assert_eq!(
+            Address::<Size512>::with_block_size(0, 1792, 10).into_index(),
+            Some(1792)
         );
     }
 
