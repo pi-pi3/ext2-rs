@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use alloc::Vec;
 
 use error::Error;
-use block::{Address, Size};
+use sector::{Address, Size};
 use buffer::{Buffer, BufferSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
@@ -221,7 +221,7 @@ mod tests {
     use std::fs::File;
     use std::cell::RefCell;
 
-    use block::{Address, Size512};
+    use sector::{Address, Size512};
     use buffer::Buffer;
 
     use super::Ext2;

@@ -2,7 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
-use block::{Address, Size};
+use sector::{Address, Size};
 use buffer::Buffer;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
@@ -205,9 +205,9 @@ impl Superblock {
         let end = offset + Address::from(mem::size_of::<Superblock>());
         if haystack.len() < end {
             return Err(Error::AddressOutOfBounds(
-                end.block(),
+                end.sector(),
                 end.offset(),
-                end.block_size(),
+                end.sector_size(),
             ));
         }
 
@@ -296,7 +296,7 @@ bitflags! {
 
 #[cfg(test)]
 mod tests {
-    use block::Size512;
+    use sector::Size512;
     use super::*;
 
     #[test]

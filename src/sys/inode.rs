@@ -2,7 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
-use block::{Address, Size};
+use sector::{Address, Size};
 use buffer::Buffer;
 
 /// An inode is a structure on the disk that represents a file, directory,
@@ -115,9 +115,9 @@ impl Inode {
         let end = offset + Address::from(size);
         if haystack.len() < end {
             return Err(Error::AddressOutOfBounds(
-                end.block(),
+                end.sector(),
                 end.offset(),
-                end.block_size(),
+                end.sector_size(),
             ));
         }
 

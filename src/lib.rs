@@ -15,7 +15,7 @@ extern crate core;
 
 pub mod error;
 pub mod sys;
-pub mod block;
+pub mod sector;
 pub mod buffer;
 pub mod fs;
 

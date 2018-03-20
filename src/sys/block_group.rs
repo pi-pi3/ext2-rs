@@ -4,7 +4,7 @@ use core::fmt::{self, Debug};
 use alloc::Vec;
 
 use error::Error;
-use block::{Address, Size};
+use sector::{Address, Size};
 use buffer::Buffer;
 
 /// The Block Group Descriptor Table contains a descriptor for each block group
@@ -66,9 +66,9 @@ impl BlockGroupDescriptor {
             offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         if haystack.len() < end {
             return Err(Error::AddressOutOfBounds(
-                end.block(),
+                end.sector(),
                 end.offset(),
-                end.block_size(),
+                end.sector_size(),
             ));
         }
 
@@ -94,9 +94,9 @@ impl BlockGroupDescriptor {
             + Address::from(count * mem::size_of::<BlockGroupDescriptor>());
         if haystack.len() < end {
             return Err(Error::AddressOutOfBounds(
-                end.block(),
+                end.sector(),
                 end.offset(),
-                end.block_size(),
+                end.sector_size(),
             ));
         }
 
@@ -115,7 +115,7 @@ impl BlockGroupDescriptor {
 
 #[cfg(test)]
 mod tests {
-    use block::{Address, Size512};
+    use sector::{Address, Size512};
     use super::*;
 
     #[test]

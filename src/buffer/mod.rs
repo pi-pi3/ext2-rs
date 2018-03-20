@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 use alloc::borrow::{Cow, ToOwned};
 
 use error::Infallible;
-use block::{Address, Size};
+use sector::{Address, Size};
 
 pub mod length;
 use self::length::Length;
@@ -283,7 +283,7 @@ mod file {
     use std::fs::File;
     use std::cell::RefCell;
 
-    use block::{Address, Size};
+    use sector::{Address, Size};
 
     use super::{Buffer, BufferCommit, BufferSlice};
     use super::length::Length;
@@ -355,7 +355,7 @@ mod file {
 
 #[cfg(test)]
 mod tests {
-    use block::{Address, Size512};
+    use sector::{Address, Size512};
     use super::*;
 
     #[test]
