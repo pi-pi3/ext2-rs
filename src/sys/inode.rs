@@ -113,7 +113,7 @@ impl Inode {
         }
 
         let end = offset + Address::from(size);
-        if haystack.len() < end {
+        if haystack.size() < end {
             return Err(Error::AddressOutOfBounds(
                 end.sector(),
                 end.offset(),
@@ -126,10 +126,6 @@ impl Inode {
             .dynamic_cast::<Inode>();
 
         Ok(inode)
-    }
-
-    pub fn in_use(&self) -> bool {
-        self.hard_links > 0
     }
 }
 

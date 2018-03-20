@@ -203,7 +203,7 @@ impl Superblock {
     {
         let offset = Address::from(1024_usize);
         let end = offset + Address::from(mem::size_of::<Superblock>());
-        if haystack.len() < end {
+        if haystack.size() < end {
             return Err(Error::AddressOutOfBounds(
                 end.sector(),
                 end.offset(),

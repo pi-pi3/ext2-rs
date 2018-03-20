@@ -64,7 +64,7 @@ impl BlockGroupDescriptor {
     {
         let end =
             offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
-        if haystack.len() < end {
+        if haystack.size() < end {
             return Err(Error::AddressOutOfBounds(
                 end.sector(),
                 end.offset(),
@@ -92,7 +92,7 @@ impl BlockGroupDescriptor {
     {
         let end = offset
             + Address::from(count * mem::size_of::<BlockGroupDescriptor>());
-        if haystack.len() < end {
+        if haystack.size() < end {
             return Err(Error::AddressOutOfBounds(
                 end.sector(),
                 end.offset(),

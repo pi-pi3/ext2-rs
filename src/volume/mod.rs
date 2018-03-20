@@ -19,7 +19,7 @@ where
 {
     type Error;
 
-    fn len(&self) -> Length<Idx>;
+    fn size(&self) -> Length<Idx>;
     fn commit(
         &mut self,
         slice: Option<VolumeCommit<T, Idx>>,
@@ -33,7 +33,7 @@ where
         &'a self,
         range: Range<Idx>,
     ) -> Option<VolumeSlice<'a, T, Idx>> {
-        if self.len() >= range.end && self.len() > range.start {
+        if self.size() >= range.end && self.size() > range.start {
             unsafe { Some(self.slice_unchecked(range)) }
         } else {
             None
@@ -235,7 +235,7 @@ macro_rules! impl_slice {
         {
             type Error = Infallible;
 
-            fn len(&self) -> Length<Address<S>> {
+            fn size(&self) -> Length<Address<S>> {
                 Length::Bounded(
                     Address::from(<Self as AsRef<[T]>>::as_ref(self).len())
                 )
@@ -298,7 +298,7 @@ mod file {
     impl<S: Size + PartialOrd + Copy> Volume<u8, Address<S>> for RefCell<File> {
         type Error = io::Error;
 
-        fn len(&self) -> Length<Address<S>> {
+        fn size(&self) -> Length<Address<S>> {
             Length::Bounded(
                 self.borrow()
                     .metadata()
