@@ -177,7 +177,7 @@ impl<S: Size> Sub for Address<S> {
     type Output = Address<S>;
     fn sub(self, rhs: Address<S>) -> Address<S> {
         Address::new(
-            self.block + rhs.block,
+            self.block - rhs.block,
             self.offset as isize - rhs.offset as isize,
         )
     }

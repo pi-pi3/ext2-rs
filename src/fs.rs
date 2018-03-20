@@ -230,6 +230,11 @@ mod tests {
     fn file_len() {
         let file = RefCell::new(File::open("ext2.img").unwrap());
         assert_eq!(
+            Address::<Size512>::from(2048_usize)
+                - Address::<Size512>::from(1024_usize),
+            Address::<Size512>::new(2, 0)
+        );
+        assert_eq!(
             unsafe {
                 file.slice_unchecked(
                     Address::<Size512>::from(1024_usize)
