@@ -313,7 +313,7 @@ mod tests {
         use std::cell::RefCell;
         use std::fs::File;
 
-        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let file = RefCell::new(File::open("ext2.img").unwrap());
         let superblock = unsafe { Superblock::find(&file) };
         assert!(
             superblock.is_ok(),

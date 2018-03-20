@@ -211,13 +211,13 @@ mod tests {
 
     #[test]
     fn file_len() {
-        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let file = RefCell::new(File::open("ext2.img").unwrap());
         assert_eq!(unsafe { file.slice_unchecked(1024..2048).len() }, 1024);
     }
 
     #[test]
     fn file() {
-        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let file = RefCell::new(File::open("ext2.img").unwrap());
         let fs = Ext2::new(file);
 
         assert!(
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn inodes() {
-        let file = RefCell::new(File::open("ext2.bin").unwrap());
+        let file = RefCell::new(File::open("ext2.img").unwrap());
         let fs = Ext2::new(file);
 
         assert!(
