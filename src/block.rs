@@ -1,6 +1,8 @@
+use core::mem;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 use core::fmt::{self, Debug, Display, LowerHex};
+use core::iter::Step;
 
 pub trait Size {
     // log_block_size = log_2(block_size) - 10
@@ -78,6 +80,38 @@ impl<S: Size> Address<S> {
 
     pub fn offset(&self) -> usize {
         self.offset
+    }
+}
+
+impl<S: Size + Clone + PartialOrd> Step for Address<S> {
+    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+        if end.block >= start.block {
+            Some(end.block - start.block)
+        } else {
+            None
+        }
+    }
+
+    fn replace_one(&mut self) -> Self {
+        mem::replace(self, Address::new(1, 0))
+    }
+
+    fn replace_zero(&mut self) -> Self {
+        mem::replace(self, Address::new(0, 0))
+    }
+
+    fn add_one(&self) -> Self {
+        Address::new(self.block + 1, 0)
+    }
+
+    fn sub_one(&self) -> Self {
+        Address::new(self.block - 1, 0)
+    }
+
+    fn add_usize(&self, n: usize) -> Option<Self> {
+        self.block
+            .checked_add(n)
+            .map(|block| Address::new(block, 0))
     }
 }
 
