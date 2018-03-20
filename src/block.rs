@@ -59,6 +59,14 @@ impl<S: Size> Address<S> {
             .and_then(|block| block.checked_add(self.offset))
     }
 
+    pub const fn block_size(&self) -> usize {
+        S::SIZE
+    }
+
+    pub const fn log_block_size(&self) -> u32 {
+        S::LOG_SIZE
+    }
+
     pub fn block(&self) -> usize {
         self.block
     }

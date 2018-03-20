@@ -2,6 +2,7 @@
 #![feature(specialization)]
 #![feature(swap_with_slice)]
 #![feature(macro_lifetime_matcher)]
+#![feature(const_fn)]
 #![cfg_attr(all(not(test), feature = "no_std"), no_std)]
 
 #[macro_use]
