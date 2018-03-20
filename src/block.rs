@@ -43,7 +43,7 @@ pub struct Address<S: Size> {
 
 impl<S: Size> Address<S> {
     pub fn new(block: usize, offset: usize) -> Address<S> {
-        let block = block + offset >> (S::LOG_SIZE + 10);
+        let block = block + (offset >> (S::LOG_SIZE + 10));
         let offset = offset & S::OFFSET_MASK;
         let _phantom = PhantomData;
         Address {
@@ -147,6 +147,6 @@ mod tests {
         let a = Address::<Size1024>::new(0, 4096);
         let b = Address::<Size1024>::new(0, 512);
         assert_eq!(a - b, Address::<Size1024>::new(3, 512));
-        assert_eq!((a + b).into_index(), Some(3584));
+        assert_eq!((a - b).into_index(), Some(3584));
     }
 }
