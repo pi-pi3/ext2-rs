@@ -61,7 +61,7 @@ impl<S: Size> Address<S> {
     ) -> Address<S> {
         let log_diff = log_block_size as isize - S::LOG_SIZE as isize;
         let top_offset = offset >> S::LOG_SIZE;
-        let offset = offset >> log_diff;
+        let offset = offset & ((1 << log_block_size) - 1);
         let block = block << log_diff | top_offset;
         Address::new(block, offset as isize)
     }
@@ -186,6 +186,19 @@ impl<S: Size> Sub for Address<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conv() {
+        assert_eq!(Address::<Size512>::new(0, 1024).into_index(), Some(1024));
+        assert_eq!(
+            Address::<Size512>::from(1024_usize).into_index(),
+            Some(1024)
+        );
+        assert_eq!(
+            Address::<Size512>::with_block_size(1, 256, 10).into_index(),
+            Some(1024 + 256)
+        );
+    }
 
     #[test]
     fn arithmetic() {
