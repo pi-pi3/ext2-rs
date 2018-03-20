@@ -18,6 +18,12 @@ impl Size for Size512 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Size1024;
+impl Size for Size1024 {
+    const LOG_SIZE: u32 = 10;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size2048;
 impl Size for Size2048 {
     const LOG_SIZE: u32 = 11;
