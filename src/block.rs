@@ -34,7 +34,7 @@ impl Size for Size8192 {
     const LOG_SIZE: u32 = 3;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address<S: Size> {
     block: usize,
     offset: usize,
