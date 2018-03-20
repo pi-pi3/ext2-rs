@@ -1,5 +1,5 @@
 use core::mem;
-use core::marker::PhantomData;
+use core::fmt::{self, Debug};
 use core::nonzero::NonZero;
 
 use alloc::Vec;
@@ -86,27 +86,17 @@ where
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn update_inode(
-        &mut self,
-        &(ref inode, offset): &(Inode, Address<S>),
-    ) -> Result<(), Error> {
-        let slice = VolumeSlice::from_cast(&inode.inner, offset);
-        let commit = slice.commit();
-        self.volume.commit(commit).map_err(|err| Error::from(err))
-    }
-
-    pub fn read_inode(
-        &self,
+    pub fn read_inode<'a>(
+        &'a self,
         buf: &mut [u8],
-        inode: &Inode,
+        inode: &Inode<'a, S, V>,
     ) -> Result<usize, Error> {
         let total_size = inode.size();
         let mut read_size = 0;
         let block_size = self.block_size();
         let offset = 0;
 
-        for (data, _) in InodeBlocks::new(self, &inode) {
+        for (data, _) in InodeBlocks::new(&inode) {
             let data_size = block_size
                 .min(total_size - read_size)
                 .min(buf.len() - offset);
@@ -118,19 +108,22 @@ where
         Ok(read_size)
     }
 
-    pub fn write_inode(
-        &self,
-        &(ref inode, offset): &(Inode, Address<S>),
-        buf: &[u8],
+    pub fn write_inode<'a>(
+        &'a self,
+        _inode: &(Inode<'a, S, V>, Address<S>),
+        _buf: &[u8],
     ) -> Result<usize, Error> {
         unimplemented!()
     }
 
-    pub fn root_inode(&self) -> (Inode, Address<S>) {
+    pub fn root_inode<'a>(&'a self) -> (Inode<'a, S, V>, Address<S>) {
         self.inode_nth(2).unwrap()
     }
 
-    pub fn inode_nth(&self, index: usize) -> Option<(Inode, Address<S>)> {
+    pub fn inode_nth<'a>(
+        &'a self,
+        index: usize,
+    ) -> Option<(Inode<'a, S, V>, Address<S>)> {
         self.inodes_nth(index).next()
     }
 
@@ -141,17 +134,18 @@ where
     pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, S, V> {
         assert!(index > 0, "inodes are 1-indexed");
         Inodes {
-            volume: &self.volume,
+            fs: self,
             block_groups: &self.block_groups.inner,
             log_block_size: self.log_block_size(),
             inode_size: self.inode_size(),
             inodes_per_group: self.inodes_count(),
             inodes_count: self.total_inodes_count(),
             index,
-            _phantom: PhantomData,
         }
     }
+}
 
+impl<S: Size + Copy, V: Volume<u8, Address<S>>> Ext2<S, V> {
     fn superblock(&self) -> &Superblock {
         &self.superblock.inner
     }
@@ -165,9 +159,9 @@ where
         (self.superblock().rev_major, self.superblock().rev_minor)
     }
 
-    pub fn inode_size(&self) -> usize {
+    pub fn inode_size<'a>(&'a self) -> usize {
         if self.version().0 == 0 {
-            mem::size_of::<Inode>()
+            mem::size_of::<Inode<'a, S, V>>()
         } else {
             // note: inodes bigger than 128 are not supported
             self.superblock().inode_size as usize
@@ -214,15 +208,20 @@ where
     }
 }
 
-pub struct Inodes<'a, S: Size, V: 'a + Volume<u8, Address<S>>> {
-    volume: &'a V,
+impl<S: Size, V: Volume<u8, Address<S>>> Debug for Ext2<S, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Ext2<{}>", S::SIZE)
+    }
+}
+
+pub struct Inodes<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
+    fs: &'a Ext2<S, V>,
     block_groups: &'a [BlockGroupDescriptor],
     log_block_size: u32,
     inode_size: usize,
     inodes_per_group: usize,
     inodes_count: usize,
     index: usize,
-    _phantom: PhantomData<S>,
 }
 
 impl<'a, S: Size + Copy, V: 'a + Volume<u8, Address<S>>> Iterator
@@ -230,7 +229,7 @@ impl<'a, S: Size + Copy, V: 'a + Volume<u8, Address<S>>> Iterator
 where
     Error: From<V::Error>,
 {
-    type Item = (Inode, Address<S>);
+    type Item = (Inode<'a, S, V>, Address<S>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.inodes_count {
@@ -247,9 +246,10 @@ where
                 self.log_block_size,
             );
             let raw = unsafe {
-                RawInode::find_inode(self.volume, offset, self.inode_size).ok()
+                RawInode::find_inode(&self.fs.volume, offset, self.inode_size)
+                    .ok()
             };
-            raw.map(|(raw, offset)| (Inode::new(raw), offset))
+            raw.map(|(raw, offset)| (Inode::new(self.fs, raw), offset))
         } else {
             None
         }
@@ -257,13 +257,14 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct Inode {
+pub struct Inode<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
+    fs: &'a Ext2<S, V>,
     inner: RawInode,
 }
 
-impl Inode {
-    pub fn new(inner: RawInode) -> Inode {
-        Inode { inner }
+impl<'a, S: 'a + Size + Copy, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
+    pub fn new(fs: &'a Ext2<S, V>, inner: RawInode) -> Inode<'a, S, V> {
+        Inode { fs, inner }
     }
 
     pub fn block(&self, index: usize) -> Option<NonZero<usize>> {
@@ -281,14 +282,25 @@ impl Inode {
         //     - that's n/4 blocks with n/4 pointers each = (n/4)^2
         // number of blocks in triply table: (block_size/4)^3
 
-        let bs4 = self.block_size() / 4;
+        let bs4 = self.fs.block_size() / 4;
         if index < 12 {
             NonZero::new(self.inner.direct_pointer[index] as usize)
-        } else if index < bs4 {
-            unimplemented!("indirect pointer table");
-        } else if index < bs4 * bs4 {
+        } else if index < bs4 + 12 {
+            let block = self.inner.indirect_pointer as usize;
+            let offset = index - 12;
+            let addr = Address::with_block_size(
+                block,
+                offset as isize,
+                self.fs.log_block_size(),
+            );
+            let size = Address::from(4_usize);
+            let slice = self.fs.volume.slice(addr..addr + size);
+            slice.and_then(|slice| unsafe {
+                NonZero::new(u32::from_le(slice.dynamic_cast::<u32>().0) as usize)
+            })
+        } else if index < bs4 * bs4 + bs4 + 12 {
             unimplemented!("doubly indirect pointer table");
-        } else if index < bs4 * bs4 * bs4 {
+        } else if index < bs4 * bs4 * bs4 + bs4 * bs4 + bs4 + 12 {
             unimplemented!("triply indirect pointer table");
         } else {
             None
@@ -328,9 +340,9 @@ impl Inode {
     }
 }
 
-pub struct InodeBlocks<'a, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
-    fs: &'a Ext2<S, V>,
-    inode: &'b Inode,
+pub struct InodeBlocks<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>>
+{
+    inode: &'b Inode<'a, S, V>,
     index: usize,
 }
 
@@ -339,15 +351,8 @@ impl<'a, 'b, S: Size + Copy, V: 'a + Volume<u8, Address<S>>>
 where
     Error: From<V::Error>,
 {
-    pub fn new(
-        fs: &'a Ext2<S, V>,
-        inode: &'b Inode,
-    ) -> InodeBlocks<'a, 'b, S, V> {
-        InodeBlocks {
-            fs: fs,
-            inode,
-            index: 0,
-        }
+    pub fn new(inode: &'b Inode<'a, S, V>) -> InodeBlocks<'a, 'b, S, V> {
+        InodeBlocks { inode, index: 0 }
     }
 }
 
@@ -364,16 +369,24 @@ where
             .map(|block| {
                 let block = block.get();
                 self.index += 1;
-                Address::with_block_size(block, 0, self.fs.log_block_size())
+                Address::with_block_size(
+                    block,
+                    0,
+                    self.inode.fs.log_block_size(),
+                )
                     ..Address::with_block_size(
                         block + 1,
                         0,
-                        self.fs.log_block_size(),
+                        self.inode.fs.log_block_size(),
                     )
             })
             .and_then(|block| {
                 let offset = block.start;
-                self.fs.volume.slice(block).map(|slice| (slice, offset))
+                self.inode
+                    .fs
+                    .volume
+                    .slice(block)
+                    .map(|slice| (slice, offset))
             })
     }
 }
@@ -456,7 +469,7 @@ mod tests {
         for inode in inodes {
             println!("{:?}", inode.0);
             let size = inode.0.size();
-            for block in InodeBlocks::new(&fs, &inode.0) {
+            for block in InodeBlocks::new(&inode.0) {
                 let (data, _) = block;
                 assert_eq!(data.len(), fs.block_size());
                 println!("{:?}", &data[..size]);
@@ -468,7 +481,6 @@ mod tests {
 
     #[test]
     fn read_inode() {
-        use std::str;
         let file = RefCell::new(File::open("ext2.img").unwrap());
         let fs = Ext2::<Size512, _>::new(file).unwrap();
 
