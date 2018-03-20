@@ -349,6 +349,9 @@ mod file {
             let mut vec = Vec::with_capacity(
                 (range.end - range.start).index64() as usize,
             );
+            unsafe {
+                vec.set_len((range.end - range.start).index64() as usize);
+            }
             let mut refmut = self.borrow_mut();
             refmut
                 .seek(SeekFrom::Start(index.index64()))
