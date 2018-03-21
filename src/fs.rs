@@ -92,25 +92,24 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         inode: &Inode<'a, S, V>,
     ) -> Result<usize, Error> {
         let total_size = inode.size();
-        let mut read_size = 0;
         let block_size = self.block_size();
-        let offset = 0;
+        let mut offset = 0;
 
         for block in InodeBlocks::new(&inode) {
             match block {
                 Ok((data, _)) => {
                     let data_size = block_size
-                        .min(total_size - read_size)
+                        .min(total_size - offset)
                         .min(buf.len() - offset);
                     let end = offset + data_size;
                     buf[offset..end].copy_from_slice(&data[..data_size]);
-                    read_size += data_size;
+                    offset += data_size;
                 }
                 Err(err) => return Err(err.into()),
             }
         }
 
-        Ok(read_size)
+        Ok(offset)
     }
 
     pub fn write_inode<'a>(
@@ -273,6 +272,13 @@ impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
     }
 
     pub fn block(&self, index: usize) -> Option<NonZero<u32>> {
+        self.try_block(index).ok().and_then(|block| block)
+    }
+
+    pub fn try_block(
+        &self,
+        mut index: usize,
+    ) -> Result<Option<NonZero<u32>>, Error> {
         // number of blocks in direct table: 12
         // number of blocks in indirect table: block_size/4
         //   why?
@@ -287,29 +293,95 @@ impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
         //     - that's n/4 blocks with n/4 pointers each = (n/4)^2
         // number of blocks in triply table: (block_size/4)^3
 
-        let bs4 = self.fs.block_size() / 4;
-        if index < 12 {
-            NonZero::new(self.inner.direct_pointer[index])
-        } else if index < bs4 + 12 {
-            let block = self.inner.indirect_pointer;
-            let offset = index - 12;
-            let addr = Address::with_block_size(
-                block,
-                offset as i32,
-                self.fs.log_block_size(),
-            );
-            let size = Address::from(4_u64);
-            let slice = self.fs.volume.slice(addr..addr + size);
-            slice.ok().and_then(|slice| unsafe {
-                NonZero::new(u32::from_le(slice.dynamic_cast::<u32>().0))
-            })
-        } else if index < bs4 * bs4 + bs4 + 12 {
-            unimplemented!("doubly indirect pointer table");
-        } else if index < bs4 * bs4 * bs4 + bs4 * bs4 + bs4 + 12 {
-            unimplemented!("triply indirect pointer table");
-        } else {
-            None
+        fn block_index<S: Size, V: Volume<u8, Address<S>>>(
+            volume: &V,
+            block: u32,
+            index: usize,
+            log_block_size: u32,
+        ) -> Result<Option<NonZero<u32>>, Error> {
+            let offset = (index * 4) as i32;
+            let end = offset + 4;
+            let addr = Address::with_block_size(block, offset, log_block_size);
+            let end = Address::with_block_size(block, end, log_block_size);
+            let block = volume.slice(addr..end);
+            match block {
+                Ok(block) => unsafe {
+                    Ok(NonZero::new(block.dynamic_cast::<u32>().0))
+                },
+                Err(err) => Err(err.into()),
+            }
         }
+
+        let bs4 = self.fs.block_size() / 4;
+        let log_block_size = self.fs.log_block_size();
+
+        if index < 12 {
+            return Ok(NonZero::new(self.inner.direct_pointer[index]));
+        }
+
+        index -= 12;
+
+        if index < bs4 {
+            let block = self.inner.indirect_pointer;
+            return block_index(&self.fs.volume, block, index, log_block_size);
+        }
+
+        index -= bs4;
+
+        if index < bs4 * bs4 {
+            let indirect_index = index >> (log_block_size + 2);
+            let block = match block_index(
+                &self.fs.volume,
+                self.inner.doubly_indirect,
+                indirect_index,
+                log_block_size,
+            ) {
+                Ok(Some(block)) => block.get(),
+                Ok(None) => return Ok(None),
+                Err(err) => return Err(err),
+            };
+            return block_index(
+                &self.fs.volume,
+                block,
+                index & (bs4 - 1),
+                log_block_size,
+            );
+        }
+
+        index -= bs4 * bs4;
+
+        if index < bs4 * bs4 * bs4 {
+            let doubly_index = index >> (2 * log_block_size + 4);
+            let indirect = match block_index(
+                &self.fs.volume,
+                self.inner.triply_indirect,
+                doubly_index,
+                log_block_size,
+            ) {
+                Ok(Some(block)) => block.get(),
+                Ok(None) => return Ok(None),
+                Err(err) => return Err(err),
+            };
+            let indirect_index = (index >> (log_block_size + 2)) & (bs4 - 1);
+            let block = match block_index(
+                &self.fs.volume,
+                indirect as u32,
+                indirect_index,
+                log_block_size,
+            ) {
+                Ok(Some(block)) => block.get(),
+                Ok(None) => return Ok(None),
+                Err(err) => return Err(err),
+            };
+            return block_index(
+                &self.fs.volume,
+                block,
+                index & (bs4 - 1),
+                log_block_size,
+            );
+        }
+
+        Ok(None)
     }
 
     pub fn in_use(&self) -> bool {
@@ -362,33 +434,30 @@ impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>>
 impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     for InodeBlocks<'a, 'b, S, V>
 {
-    type Item = Result<(VolumeSlice<'a, u8, Address<S>>, Address<S>), V::Error>;
+    type Item = Result<(VolumeSlice<'a, u8, Address<S>>, Address<S>), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let block = self.inode.block(self.index);
-        block
-            .map(|block| {
-                let block = block.get();
-                self.index += 1;
-                Address::with_block_size(
-                    block,
-                    0,
-                    self.inode.fs.log_block_size(),
-                )
-                    ..Address::with_block_size(
-                        block + 1,
-                        0,
-                        self.inode.fs.log_block_size(),
-                    )
-            })
-            .map(|block| {
-                let offset = block.start;
-                self.inode
-                    .fs
-                    .volume
-                    .slice(block)
-                    .map(|slice| (slice, offset))
-            })
+        let block = self.inode.try_block(self.index);
+        let block = match block {
+            Ok(Some(ok)) => ok,
+            Ok(None) => return None,
+            Err(err) => return Some(Err(err)),
+        };
+
+        self.index += 1;
+
+        let block = block.get();
+        let log_block_size = self.inode.fs.log_block_size();
+        let offset = Address::with_block_size(block, 0, log_block_size);
+        let end = Address::with_block_size(block + 1, 0, log_block_size);
+
+        let slice = self.inode
+            .fs
+            .volume
+            .slice(offset..end)
+            .map(|slice| (slice, offset))
+            .map_err(|err| err.into());
+        Some(slice)
     }
 }
 
@@ -499,6 +568,38 @@ mod tests {
             assert_eq!(size, inode.size());
             unsafe {
                 buf.set_len(size);
+            }
+        }
+    }
+
+    #[test]
+    fn read_big() {
+        let file = RefCell::new(File::open("ext2.img").unwrap());
+        let fs = Ext2::<Size512, _>::new(file).unwrap();
+
+        let inodes = fs.inodes().filter(|inode| {
+            inode.0.in_use() && inode.0.uid() == 1000
+                && inode.0.size() == 537600
+        });
+        for (inode, _) in inodes {
+            let mut buf = Vec::with_capacity(inode.size());
+            unsafe {
+                buf.set_len(inode.size());
+            }
+            let size = fs.read_inode(&mut buf[..], &inode);
+            assert!(size.is_ok());
+            let size = size.unwrap();
+            assert_eq!(size, inode.size());
+            unsafe {
+                buf.set_len(size);
+            }
+
+            for (i, &x) in buf.iter().enumerate() {
+                if i & 1 == 0 {
+                    assert_eq!(x, b'u', "{}", i);
+                } else {
+                    assert_eq!(x, b'\n', "{}", i);
+                }
             }
         }
     }
