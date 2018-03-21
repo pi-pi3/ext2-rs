@@ -30,10 +30,7 @@ pub struct Ext2<S: Size, V: Volume<u8, Address<S>>> {
     block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
-impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V>
-where
-    Error: From<V::Error>,
-{
+impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
     pub fn new(volume: V) -> Result<Ext2<S, V>, Error> {
         let superblock = unsafe { Struct::from(Superblock::find(&volume)?) };
         let block_groups_offset = Address::with_block_size(
@@ -45,7 +42,10 @@ where
             .inner
             .block_group_count()
             .map(|count| count as usize)
-            .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))?;
+            .map_err(|(a, b)| Error::BadBlockGroupCount {
+                by_blocks: a,
+                by_inodes: b,
+            })?;
         let block_groups = unsafe {
             BlockGroupDescriptor::find_descriptor_table(
                 &volume,
@@ -70,7 +70,7 @@ where
                 self.superblock.offset,
             );
             let commit = slice.commit();
-            self.volume.commit(commit).map_err(|err| Error::from(err))?;
+            self.volume.commit(commit).map_err(|err| err.into())?;
         }
 
         // block group descriptors
@@ -78,7 +78,7 @@ where
         for descr in &self.block_groups.inner {
             let slice = VolumeSlice::from_cast(descr, offset);
             let commit = slice.commit();
-            self.volume.commit(commit).map_err(|err| Error::from(err))?;
+            self.volume.commit(commit).map_err(|err| err.into())?;
             offset =
                 offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         }
@@ -96,13 +96,18 @@ where
         let block_size = self.block_size();
         let offset = 0;
 
-        for (data, _) in InodeBlocks::new(&inode) {
-            let data_size = block_size
-                .min(total_size - read_size)
-                .min(buf.len() - offset);
-            let end = offset + data_size;
-            buf[offset..end].copy_from_slice(&data[..data_size]);
-            read_size += data_size;
+        for block in InodeBlocks::new(&inode) {
+            match block {
+                Ok((data, _)) => {
+                    let data_size = block_size
+                        .min(total_size - read_size)
+                        .min(buf.len() - offset);
+                    let end = offset + data_size;
+                    buf[offset..end].copy_from_slice(&data[..data_size]);
+                    read_size += data_size;
+                }
+                Err(err) => return Err(err.into()),
+            }
         }
 
         Ok(read_size)
@@ -180,7 +185,10 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         self.superblock()
             .block_group_count()
             .map(|count| count as usize)
-            .map_err(|(a, b)| Error::BadBlockGroupCount(a, b))
+            .map_err(|(a, b)| Error::BadBlockGroupCount {
+                by_blocks: a,
+                by_inodes: b,
+            })
     }
 
     pub fn total_block_count(&self) -> usize {
@@ -224,9 +232,8 @@ pub struct Inodes<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
     index: usize,
 }
 
-impl<'a, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator for Inodes<'a, S, V>
-where
-    Error: From<V::Error>,
+impl<'a, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
+    for Inodes<'a, S, V>
 {
     type Item = (Inode<'a, S, V>, Address<S>);
 
@@ -293,7 +300,7 @@ impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
             );
             let size = Address::from(4_u64);
             let slice = self.fs.volume.slice(addr..addr + size);
-            slice.and_then(|slice| unsafe {
+            slice.ok().and_then(|slice| unsafe {
                 NonZero::new(u32::from_le(slice.dynamic_cast::<u32>().0))
             })
         } else if index < bs4 * bs4 + bs4 + 12 {
@@ -344,9 +351,8 @@ pub struct InodeBlocks<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>>
     index: usize,
 }
 
-impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> InodeBlocks<'a, 'b, S, V>
-where
-    Error: From<V::Error>,
+impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>>
+    InodeBlocks<'a, 'b, S, V>
 {
     pub fn new(inode: &'b Inode<'a, S, V>) -> InodeBlocks<'a, 'b, S, V> {
         InodeBlocks { inode, index: 0 }
@@ -355,10 +361,8 @@ where
 
 impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     for InodeBlocks<'a, 'b, S, V>
-where
-    Error: From<V::Error>,
 {
-    type Item = (VolumeSlice<'a, u8, Address<S>>, Address<S>);
+    type Item = Result<(VolumeSlice<'a, u8, Address<S>>, Address<S>), V::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let block = self.inode.block(self.index);
@@ -377,7 +381,7 @@ where
                         self.inode.fs.log_block_size(),
                     )
             })
-            .and_then(|block| {
+            .map(|block| {
                 let offset = block.start;
                 self.inode
                     .fs
@@ -467,7 +471,7 @@ mod tests {
             println!("{:?}", inode.0);
             let size = inode.0.size();
             for block in InodeBlocks::new(&inode.0) {
-                let (data, _) = block;
+                let (data, _) = block.unwrap();
                 assert_eq!(data.len(), fs.block_size());
                 println!("{:?}", &data[..size]);
                 let _ = str::from_utf8(&data[..size])
@@ -490,9 +494,11 @@ mod tests {
                 buf.set_len(inode.size());
             }
             let size = fs.read_inode(&mut buf[..], &inode);
-            assert_eq!(size, Ok(inode.size()));
+            assert!(size.is_ok());
+            let size = size.unwrap();
+            assert_eq!(size, inode.size());
             unsafe {
-                buf.set_len(size.unwrap());
+                buf.set_len(size);
             }
         }
     }

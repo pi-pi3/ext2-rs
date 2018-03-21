@@ -6,7 +6,7 @@ use alloc::Vec;
 use alloc::boxed::Box;
 use alloc::borrow::{Cow, ToOwned};
 
-use error::Infallible;
+use error::Error;
 use sector::{Address, Size};
 
 pub mod length;
@@ -17,7 +17,7 @@ where
     [T]: ToOwned,
     Idx: PartialEq + PartialOrd,
 {
-    type Error;
+    type Error: Into<Error>;
 
     fn size(&self) -> Length<Idx>;
     fn commit(
@@ -32,13 +32,7 @@ where
     fn slice<'a>(
         &'a self,
         range: Range<Idx>,
-    ) -> Option<VolumeSlice<'a, T, Idx>> {
-        if self.size() >= range.end && self.size() > range.start {
-            unsafe { Some(self.slice_unchecked(range)) }
-        } else {
-            None
-        }
-    }
+    ) -> Result<VolumeSlice<'a, T, Idx>, Self::Error>;
 }
 
 pub struct VolumeSlice<'a, T: 'a, Idx>
@@ -233,7 +227,7 @@ macro_rules! impl_slice {
             T: Clone,
             [T]: ToOwned,
         {
-            type Error = Infallible;
+            type Error = Error;
 
             fn size(&self) -> Length<Address<S>> {
                 Length::Bounded(
@@ -244,7 +238,7 @@ macro_rules! impl_slice {
             fn commit(
                 &mut self,
                 slice: Option<VolumeCommit<T, Address<S>>>,
-            ) -> Result<(), Infallible> {
+            ) -> Result<(), Self::Error> {
                 slice.map(|slice| {
                     let index = slice.at_index().into_index() as usize;
                     let end = index + slice.as_ref().len();
@@ -268,6 +262,21 @@ macro_rules! impl_slice {
                     <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range),
                     index,
                 )
+            }
+
+            fn slice<'a>(
+                &'a self,
+                range: Range<Address<S>>,
+            ) -> Result<VolumeSlice<'a, T, Address<S>>, Self::Error> {
+                if self.size() >= range.end {
+                    unsafe { Ok(self.slice_unchecked(range)) }
+                } else {
+                    Err(Error::AddressOutOfBounds {
+                        sector: range.end.sector(),
+                        offset: range.end.offset(),
+                        size: range.end.sector_size()
+                    })
+                }
             }
         }
     };
@@ -344,7 +353,7 @@ mod file {
         fn slice<'a>(
             &'a self,
             range: Range<Address<S>>,
-        ) -> Option<VolumeSlice<'a, u8, Address<S>>> {
+        ) -> Result<VolumeSlice<'a, u8, Address<S>>, Self::Error> {
             let index = range.start;
             let mut vec = Vec::with_capacity((range.end - range.start)
                 .into_index()
@@ -357,7 +366,6 @@ mod file {
                 .seek(SeekFrom::Start(index.into_index()))
                 .and_then(|_| refmut.read_exact(&mut vec[..]))
                 .map(move |_| VolumeSlice::new_owned(vec, index))
-                .ok()
         }
     }
 }

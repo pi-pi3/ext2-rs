@@ -197,18 +197,15 @@ impl Debug for Superblock {
 impl Superblock {
     pub unsafe fn find<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
-    ) -> Result<(Superblock, Address<S>), Error>
-    where
-        Error: From<V::Error>,
-    {
+    ) -> Result<(Superblock, Address<S>), Error> {
         let offset = Address::from(1024_usize);
         let end = offset + Address::from(mem::size_of::<Superblock>());
         if haystack.size() < end {
-            return Err(Error::AddressOutOfBounds(
-                end.sector(),
-                end.offset(),
-                end.sector_size(),
-            ));
+            return Err(Error::AddressOutOfBounds {
+                sector: end.sector(),
+                offset: end.offset(),
+                size: end.sector_size(),
+            });
         }
 
         let superblock = {
@@ -218,7 +215,9 @@ impl Superblock {
         };
 
         if superblock.0.magic != EXT2_MAGIC {
-            Err(Error::BadMagic(superblock.0.magic))
+            Err(Error::BadMagic {
+                magic: superblock.0.magic,
+            })
         } else {
             Ok(superblock)
         }

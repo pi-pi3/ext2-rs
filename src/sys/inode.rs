@@ -101,21 +101,18 @@ impl Inode {
         haystack: &V,
         offset: Address<S>,
         size: usize,
-    ) -> Result<(Inode, Address<S>), Error>
-    where
-        Error: From<V::Error>,
-    {
+    ) -> Result<(Inode, Address<S>), Error> {
         if size != mem::size_of::<Inode>() {
             unimplemented!("inodes with a size != 128");
         }
 
         let end = offset + Address::from(size);
         if haystack.size() < end {
-            return Err(Error::AddressOutOfBounds(
-                end.sector(),
-                end.offset(),
-                end.sector_size(),
-            ));
+            return Err(Error::AddressOutOfBounds {
+                sector: end.sector(),
+                offset: end.offset(),
+                size: end.sector_size(),
+            });
         }
 
         let inode = haystack

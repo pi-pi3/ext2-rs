@@ -1,15 +1,60 @@
+use core::fmt::{self, Display};
+use alloc::String;
+
 #[cfg(any(test, not(feature = "no_std")))]
 use std::io;
 
 /// The set of all possible errors
 #[derive(Debug)]
 pub enum Error {
-    BadMagic(u16),
-    OutOfBounds(usize),
-    AddressOutOfBounds(u32, u32, usize),
-    BadBlockGroupCount(u32, u32),
+    Other(String),
+    BadMagic {
+        magic: u16,
+    },
+    OutOfBounds {
+        index: usize,
+    },
+    AddressOutOfBounds {
+        sector: u32,
+        offset: u32,
+        size: usize,
+    },
+    BadBlockGroupCount {
+        by_blocks: u32,
+        by_inodes: u32,
+    },
     #[cfg(any(test, not(feature = "no_std")))]
-    Io(io::Error),
+    Io {
+        inner: io::Error,
+    },
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Other(ref msg) => write!(f, "{}", msg),
+            Error::BadMagic {
+                magic,
+            } => write!(f, "invalid magic value: {}", magic),
+            Error::OutOfBounds {
+                index,
+            } => write!(f, "index ouf of bounds: {}", index),
+            Error::AddressOutOfBounds {
+                sector,
+                offset,
+                size,
+            } => write!(f, "address ouf of bounds: {}:{} with a block size of: {}",
+                   sector, offset, size),
+            Error::BadBlockGroupCount {
+                by_blocks,
+                by_inodes,
+            } => write!(f, "conflicting block group count data; by blocks: {}, by inodes: {}", by_blocks, by_inodes),
+            #[cfg(any(test, not(feature = "no_std")))]
+            Error::Io {
+                ref inner,
+            } => write!(f, "io error: {}", inner),
+        }
+    }
 }
 
 impl From<Infallible> for Error {
@@ -20,34 +65,8 @@ impl From<Infallible> for Error {
 
 #[cfg(any(test, not(feature = "no_std")))]
 impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::Io(err)
-    }
-}
-
-impl PartialEq for Error {
-    fn eq(&self, rhs: &Error) -> bool {
-        match (self, rhs) {
-            (&Error::BadMagic(a), &Error::BadMagic(b)) => a == b,
-            (&Error::OutOfBounds(a), &Error::OutOfBounds(b)) => a == b,
-            (
-                &Error::BadBlockGroupCount(a1, a2),
-                &Error::BadBlockGroupCount(b1, b2),
-            ) => a1 == b1 && a2 == b2,
-            _ => false,
-        }
-    }
-
-    fn ne(&self, rhs: &Error) -> bool {
-        match (self, rhs) {
-            (&Error::BadMagic(a), &Error::BadMagic(b)) => a != b,
-            (&Error::OutOfBounds(a), &Error::OutOfBounds(b)) => a != b,
-            (
-                &Error::BadBlockGroupCount(a1, a2),
-                &Error::BadBlockGroupCount(b1, b2),
-            ) => a1 != b1 || a2 != b2,
-            _ => false,
-        }
+    fn from(inner: io::Error) -> Error {
+        Error::Io { inner }
     }
 }
 

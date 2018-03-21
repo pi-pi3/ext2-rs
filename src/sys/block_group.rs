@@ -55,18 +55,15 @@ impl BlockGroupDescriptor {
     pub unsafe fn find_descriptor<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
         offset: Address<S>,
-    ) -> Result<(BlockGroupDescriptor, Address<S>), Error>
-    where
-        Error: From<V::Error>,
-    {
+    ) -> Result<(BlockGroupDescriptor, Address<S>), Error> {
         let end =
             offset + Address::from(mem::size_of::<BlockGroupDescriptor>());
         if haystack.size() < end {
-            return Err(Error::AddressOutOfBounds(
-                end.sector(),
-                end.offset(),
-                end.sector_size(),
-            ));
+            return Err(Error::AddressOutOfBounds {
+                sector: end.sector(),
+                offset: end.offset(),
+                size: end.sector_size(),
+            });
         }
 
         let descr = haystack
@@ -80,18 +77,15 @@ impl BlockGroupDescriptor {
         haystack: &V,
         offset: Address<S>,
         count: usize,
-    ) -> Result<(Vec<BlockGroupDescriptor>, Address<S>), Error>
-    where
-        Error: From<V::Error>,
-    {
+    ) -> Result<(Vec<BlockGroupDescriptor>, Address<S>), Error> {
         let end = offset
             + Address::from(count * mem::size_of::<BlockGroupDescriptor>());
         if haystack.size() < end {
-            return Err(Error::AddressOutOfBounds(
-                end.sector(),
-                end.offset(),
-                end.sector_size(),
-            ));
+            return Err(Error::AddressOutOfBounds {
+                sector: end.sector(),
+                offset: end.offset(),
+                size: end.sector_size(),
+            });
         }
 
         let mut vec = Vec::with_capacity(count);
