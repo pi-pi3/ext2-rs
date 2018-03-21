@@ -227,7 +227,7 @@ impl<T, Idx> DerefMut for VolumeCommit<T, Idx> {
 
 macro_rules! impl_slice {
     (@inner $volume:ty $( , $lt:lifetime )* ) => {
-        impl<$( $lt, )* S: Size + PartialOrd + Copy, T> Volume<T, Address<S>>
+        impl<$( $lt, )* S: Size, T> Volume<T, Address<S>>
             for $volume
         where
             T: Clone,
@@ -295,7 +295,7 @@ mod file {
     use super::{Volume, VolumeCommit, VolumeSlice};
     use super::length::Length;
 
-    impl<S: Size + PartialOrd + Copy> Volume<u8, Address<S>> for RefCell<File> {
+    impl<S: Size> Volume<u8, Address<S>> for RefCell<File> {
         type Error = io::Error;
 
         fn size(&self) -> Length<Address<S>> {

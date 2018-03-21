@@ -30,7 +30,7 @@ pub struct Ext2<S: Size, V: Volume<u8, Address<S>>> {
     block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
-impl<S: Size + Copy, V: Volume<u8, Address<S>>> Ext2<S, V>
+impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V>
 where
     Error: From<V::Error>,
 {
@@ -145,7 +145,7 @@ where
     }
 }
 
-impl<S: Size + Copy, V: Volume<u8, Address<S>>> Ext2<S, V> {
+impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
     fn superblock(&self) -> &Superblock {
         &self.superblock.inner
     }
@@ -224,8 +224,7 @@ pub struct Inodes<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
     index: usize,
 }
 
-impl<'a, S: Size + Copy, V: 'a + Volume<u8, Address<S>>> Iterator
-    for Inodes<'a, S, V>
+impl<'a, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator for Inodes<'a, S, V>
 where
     Error: From<V::Error>,
 {
@@ -261,7 +260,7 @@ pub struct Inode<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
     inner: RawInode,
 }
 
-impl<'a, S: 'a + Size + Copy, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
+impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
     pub fn new(fs: &'a Ext2<S, V>, inner: RawInode) -> Inode<'a, S, V> {
         Inode { fs, inner }
     }
@@ -345,8 +344,7 @@ pub struct InodeBlocks<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>>
     index: usize,
 }
 
-impl<'a, 'b, S: Size + Copy, V: 'a + Volume<u8, Address<S>>>
-    InodeBlocks<'a, 'b, S, V>
+impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> InodeBlocks<'a, 'b, S, V>
 where
     Error: From<V::Error>,
 {
@@ -355,7 +353,7 @@ where
     }
 }
 
-impl<'a, 'b, S: Size + Copy, V: 'a + Volume<u8, Address<S>>> Iterator
+impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     for InodeBlocks<'a, 'b, S, V>
 where
     Error: From<V::Error>,

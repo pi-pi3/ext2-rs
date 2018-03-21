@@ -52,10 +52,7 @@ impl Debug for BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub unsafe fn find_descriptor<
-        S: Size + Copy + PartialOrd,
-        V: Volume<u8, Address<S>>,
-    >(
+    pub unsafe fn find_descriptor<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
         offset: Address<S>,
     ) -> Result<(BlockGroupDescriptor, Address<S>), Error>
@@ -79,10 +76,7 @@ impl BlockGroupDescriptor {
         Ok(descr)
     }
 
-    pub unsafe fn find_descriptor_table<
-        S: Size + Copy + PartialOrd,
-        V: Volume<u8, Address<S>>,
-    >(
+    pub unsafe fn find_descriptor_table<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
         offset: Address<S>,
         count: usize,

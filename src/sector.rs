@@ -4,7 +4,7 @@ use core::ops::{Add, Sub};
 use core::fmt::{self, Debug, Display, LowerHex};
 use core::iter::Step;
 
-pub trait Size: PartialOrd {
+pub trait Size: Clone + Copy + PartialOrd {
     // log_sector_size = log_2(sector_size)
     const LOG_SIZE: u32;
     const SIZE: usize = 1 << Self::LOG_SIZE;
@@ -96,7 +96,7 @@ impl<S: Size> Address<S> {
     }
 }
 
-impl<S: Size + Clone + PartialOrd> Step for Address<S> {
+impl<S: Size> Step for Address<S> {
     fn steps_between(start: &Self, end: &Self) -> Option<usize> {
         if end.sector >= start.sector {
             Some(end.sector as usize - start.sector as usize)

@@ -195,7 +195,7 @@ impl Debug for Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<S: Size + Copy + PartialOrd, V: Volume<u8, Address<S>>>(
+    pub unsafe fn find<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
     ) -> Result<(Superblock, Address<S>), Error>
     where

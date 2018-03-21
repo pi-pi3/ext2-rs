@@ -97,10 +97,7 @@ impl Debug for Inode {
 }
 
 impl Inode {
-    pub unsafe fn find_inode<
-        S: Size + Copy + PartialOrd,
-        V: Volume<u8, Address<S>>,
-    >(
+    pub unsafe fn find_inode<S: Size, V: Volume<u8, Address<S>>>(
         haystack: &V,
         offset: Address<S>,
         size: usize,

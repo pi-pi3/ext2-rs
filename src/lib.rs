@@ -13,6 +13,7 @@ extern crate alloc;
 extern crate bitflags;
 #[cfg(any(test, not(feature = "no_std")))]
 extern crate core;
+extern crate spin;
 
 pub mod error;
 pub mod sys;
