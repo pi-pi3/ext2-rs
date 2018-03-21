@@ -37,7 +37,7 @@ where
     pub fn new(volume: V) -> Result<Ext2<S, V>, Error> {
         let superblock = unsafe { Struct::from(Superblock::find(&volume)?) };
         let block_groups_offset = Address::with_block_size(
-            superblock.inner.first_data_block as usize + 1,
+            superblock.inner.first_data_block + 1,
             0,
             superblock.inner.log_block_size + 10,
         );
@@ -237,12 +237,11 @@ where
             let index = (self.index - 1) % self.inodes_per_group;
             self.index += 1;
 
-            let inodes_block =
-                self.block_groups[block_group].inode_table_block as usize;
+            let inodes_block = self.block_groups[block_group].inode_table_block;
 
             let offset = Address::with_block_size(
                 inodes_block,
-                (index * self.inode_size) as isize,
+                (index * self.inode_size) as i32,
                 self.log_block_size,
             );
             let raw = unsafe {
@@ -267,7 +266,7 @@ impl<'a, S: 'a + Size + Copy, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
         Inode { fs, inner }
     }
 
-    pub fn block(&self, index: usize) -> Option<NonZero<usize>> {
+    pub fn block(&self, index: usize) -> Option<NonZero<u32>> {
         // number of blocks in direct table: 12
         // number of blocks in indirect table: block_size/4
         //   why?
@@ -284,19 +283,19 @@ impl<'a, S: 'a + Size + Copy, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
 
         let bs4 = self.fs.block_size() / 4;
         if index < 12 {
-            NonZero::new(self.inner.direct_pointer[index] as usize)
+            NonZero::new(self.inner.direct_pointer[index])
         } else if index < bs4 + 12 {
-            let block = self.inner.indirect_pointer as usize;
+            let block = self.inner.indirect_pointer;
             let offset = index - 12;
             let addr = Address::with_block_size(
                 block,
-                offset as isize,
+                offset as i32,
                 self.fs.log_block_size(),
             );
-            let size = Address::from(4_usize);
+            let size = Address::from(4_u64);
             let slice = self.fs.volume.slice(addr..addr + size);
             slice.and_then(|slice| unsafe {
-                NonZero::new(u32::from_le(slice.dynamic_cast::<u32>().0) as usize)
+                NonZero::new(u32::from_le(slice.dynamic_cast::<u32>().0))
             })
         } else if index < bs4 * bs4 + bs4 + 12 {
             unimplemented!("doubly indirect pointer table");
@@ -405,15 +404,15 @@ mod tests {
     fn file_len() {
         let file = RefCell::new(File::open("ext2.img").unwrap());
         assert_eq!(
-            Address::<Size512>::from(2048_usize)
-                - Address::<Size512>::from(1024_usize),
+            Address::<Size512>::from(2048_u64)
+                - Address::<Size512>::from(1024_u64),
             Address::<Size512>::new(2, 0)
         );
         assert_eq!(
             unsafe {
                 file.slice_unchecked(
-                    Address::<Size512>::from(1024_usize)
-                        ..Address::<Size512>::from(2048_usize),
+                    Address::<Size512>::from(1024_u64)
+                        ..Address::<Size512>::from(2048_u64),
                 ).len()
             },
             1024

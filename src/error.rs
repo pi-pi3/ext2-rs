@@ -6,7 +6,7 @@ use std::io;
 pub enum Error {
     BadMagic(u16),
     OutOfBounds(usize),
-    AddressOutOfBounds(usize, usize, usize),
+    AddressOutOfBounds(u32, u32, usize),
     BadBlockGroupCount(u32, u32),
     #[cfg(any(test, not(feature = "no_std")))]
     Io(io::Error),

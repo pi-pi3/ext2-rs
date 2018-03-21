@@ -246,7 +246,7 @@ macro_rules! impl_slice {
                 slice: Option<VolumeCommit<T, Address<S>>>,
             ) -> Result<(), Infallible> {
                 slice.map(|slice| {
-                    let index = slice.at_index().index64() as usize;
+                    let index = slice.at_index().into_index() as usize;
                     let end = index + slice.as_ref().len();
                     // XXX: it would be much better to drop the contents of dst
                     // and move the contents of slice instead of cloning
@@ -262,8 +262,8 @@ macro_rules! impl_slice {
                 range: Range<Address<S>>,
             ) -> VolumeSlice<'a, T, Address<S>> {
                 let index = range.start;
-                let range = range.start.index64() as usize
-                    ..range.end.index64() as usize;
+                let range = range.start.into_index() as usize
+                    ..range.end.into_index() as usize;
                 VolumeSlice::new(
                     <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range),
                     index,
@@ -303,7 +303,7 @@ mod file {
                 self.borrow()
                     .metadata()
                     .map(|data| Address::from(data.len()))
-                    .unwrap_or(Address::from(0_usize)),
+                    .unwrap_or(Address::new(0, 0)),
             )
         }
 
@@ -316,7 +316,7 @@ mod file {
                     let index = *slice.at_index();
                     let mut refmut = self.borrow_mut();
                     refmut
-                        .seek(SeekFrom::Start(index.index64()))
+                        .seek(SeekFrom::Start(index.into_index()))
                         .and_then(|_| refmut.write(slice.as_ref()))
                         .map(|_| ())
                 })
@@ -329,11 +329,11 @@ mod file {
         ) -> VolumeSlice<'a, u8, Address<S>> {
             let index = range.start;
             let len = range.end - range.start;
-            let mut vec = Vec::with_capacity(len.index64() as usize);
-            vec.set_len(len.index64() as usize);
+            let mut vec = Vec::with_capacity(len.into_index() as usize);
+            vec.set_len(len.into_index() as usize);
             let mut refmut = self.borrow_mut();
             refmut
-                .seek(SeekFrom::Start(index.index64()))
+                .seek(SeekFrom::Start(index.into_index()))
                 .and_then(|_| refmut.read_exact(&mut vec[..]))
                 .unwrap_or_else(|err| {
                     panic!("could't read from File Volume: {:?}", err)
@@ -346,15 +346,15 @@ mod file {
             range: Range<Address<S>>,
         ) -> Option<VolumeSlice<'a, u8, Address<S>>> {
             let index = range.start;
-            let mut vec = Vec::with_capacity(
-                (range.end - range.start).index64() as usize,
-            );
+            let mut vec = Vec::with_capacity((range.end - range.start)
+                .into_index()
+                as usize);
             unsafe {
-                vec.set_len((range.end - range.start).index64() as usize);
+                vec.set_len((range.end - range.start).into_index() as usize);
             }
             let mut refmut = self.borrow_mut();
             refmut
-                .seek(SeekFrom::Start(index.index64()))
+                .seek(SeekFrom::Start(index.into_index()))
                 .and_then(|_| refmut.read_exact(&mut vec[..]))
                 .map(move |_| VolumeSlice::new_owned(vec, index))
                 .ok()
@@ -373,8 +373,8 @@ mod tests {
         let commit = {
             let mut slice = volume
                 .slice(
-                    Address::<Size512>::from(256_usize)
-                        ..Address::<Size512>::from(512_usize),
+                    Address::<Size512>::from(256_u64)
+                        ..Address::<Size512>::from(512_u64),
                 )
                 .unwrap();
             slice.iter_mut().for_each(|x| *x = 1);
