@@ -31,6 +31,7 @@ pub trait Volume<T: Clone, S: SectorSize> {
     ) -> Result<VolumeSlice<'a, T, S>, Self::Error>;
 }
 
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct VolumeSlice<'a, T: 'a + Clone, S: SectorSize> {
     inner: Cow<'a, [T]>,
     index: Address<S>,
