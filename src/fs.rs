@@ -1,4 +1,5 @@
 use core::mem;
+use core::slice;
 use core::fmt::{self, Debug};
 use core::nonzero::NonZero;
 
@@ -95,7 +96,7 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         let block_size = self.block_size();
         let mut offset = 0;
 
-        for block in InodeBlocks::new(&inode) {
+        for block in inode.blocks() {
             match block {
                 Ok((data, _)) => {
                     let data_size = block_size
@@ -147,9 +148,7 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
             index,
         }
     }
-}
 
-impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
     fn superblock(&self) -> &Superblock {
         &self.superblock.inner
     }
@@ -269,6 +268,27 @@ pub struct Inode<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
 impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
     pub fn new(fs: &'a Ext2<S, V>, inner: RawInode) -> Inode<'a, S, V> {
         Inode { fs, inner }
+    }
+
+    pub fn blocks<'b>(&'b self) -> InodeBlocks<'a, 'b, S, V> {
+        InodeBlocks {
+            inode: self,
+            index: 0,
+        }
+    }
+
+    pub fn directory<'b>(&'b self) -> Option<Directory<'a, 'b, S, V>> {
+        use sys::inode::TypePerm;
+        if unsafe { self.inner.type_perm.contains(TypePerm::DIRECTORY) } {
+            Some(Directory {
+                blocks: self.blocks(),
+                offset: 0,
+                buffer: None,
+                block_size: self.fs.block_size(),
+            })
+        } else {
+            None
+        }
     }
 
     pub fn block(&self, index: usize) -> Option<NonZero<u32>> {
@@ -423,14 +443,6 @@ pub struct InodeBlocks<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>>
     index: usize,
 }
 
-impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>>
-    InodeBlocks<'a, 'b, S, V>
-{
-    pub fn new(inode: &'b Inode<'a, S, V>) -> InodeBlocks<'a, 'b, S, V> {
-        InodeBlocks { inode, index: 0 }
-    }
-}
-
 impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     for InodeBlocks<'a, 'b, S, V>
 {
@@ -461,15 +473,70 @@ impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     }
 }
 
+pub struct Directory<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
+    blocks: InodeBlocks<'a, 'b, S, V>,
+    offset: usize,
+    buffer: Option<VolumeSlice<'a, u8, Address<S>>>,
+    block_size: usize,
+}
+
+impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
+    for Directory<'a, 'b, S, V>
+{
+    type Item = Result<DirectoryEntry<'a>, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buffer.is_none() || self.offset >= self.block_size {
+            self.buffer = match self.blocks.next() {
+                None => return None,
+                Some(Ok((block, _))) => Some(block),
+                Some(Err(err)) => return Some(Err(err)),
+            };
+
+            self.offset = 0;
+        }
+
+        let buffer = &self.buffer.as_ref().unwrap()[self.offset..];
+
+        let inode = buffer[0] as u32 | (buffer[1] as u32) << 8
+            | (buffer[2] as u32) << 16
+            | (buffer[3] as u32) << 24;
+        if inode == 0 {
+            return None;
+        }
+
+        let size = buffer[4] as u16 | (buffer[5] as u16) << 8;
+        let len = buffer[6];
+        let ty = buffer[7];
+
+        let ptr = unsafe { buffer.as_ptr().add(8) };
+        let name = unsafe { slice::from_raw_parts(ptr, len as usize) };
+
+        self.offset += size as usize;
+
+        Some(Ok(DirectoryEntry {
+            name: name,
+            inode: inode as usize,
+            ty: ty,
+        }))
+    }
+}
+
+pub struct DirectoryEntry<'a> {
+    pub name: &'a [u8],
+    pub inode: usize,
+    pub ty: u8,
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
     use std::cell::RefCell;
 
-    use sector::{Address, Size512};
+    use sector::{Address, Size, Size512};
     use volume::Volume;
 
-    use super::{Ext2, InodeBlocks};
+    use super::{Ext2, Inode};
 
     #[test]
     fn file_len() {
@@ -539,7 +606,7 @@ mod tests {
         for inode in inodes {
             println!("{:?}", inode.0);
             let size = inode.0.size();
-            for block in InodeBlocks::new(&inode.0) {
+            for block in inode.0.blocks() {
                 let (data, _) = block.unwrap();
                 assert_eq!(data.len(), fs.block_size());
                 println!("{:?}", &data[..size]);
@@ -602,5 +669,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn walkdir() {
+        use std::str;
+
+        fn walk<'a, S: Size, V: Volume<u8, Address<S>>>(
+            fs: &'a Ext2<S, V>,
+            inode: Inode<'a, S, V>,
+            name: String,
+        ) {
+            inode.directory().map(|dir| {
+                for entry in dir {
+                    assert!(entry.is_ok());
+                    let entry = entry.unwrap();
+                    let entry_name = str::from_utf8(entry.name).unwrap_or("?");
+                    println!("{}/{} => {}", name, entry_name, entry.inode,);
+                    if entry_name != "." && entry_name != ".." {
+                        walk(
+                            fs,
+                            fs.inode_nth(entry.inode).unwrap().0,
+                            format!("{}/{}", name, entry_name),
+                        );
+                    }
+                }
+            });
+        }
+
+        let file = RefCell::new(File::open("ext2.img").unwrap());
+        let fs = Ext2::<Size512, _>::new(file).unwrap();
+
+        let (root, _) = fs.root_inode();
+        walk(&fs, root, String::new());
     }
 }

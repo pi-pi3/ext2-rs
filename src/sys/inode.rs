@@ -16,7 +16,7 @@ use volume::Volume;
 #[derive(Clone, Copy)]
 pub struct Inode {
     /// Type and Permissions (see below)
-    pub type_perm: u16,
+    pub type_perm: TypePerm,
     /// User ID
     pub uid: u16,
     /// Lower 32 bits of size in bytes
@@ -39,7 +39,7 @@ pub struct Inode {
     /// to the inode.
     pub sectors_count: u32,
     /// Flags
-    pub flags: u32,
+    pub flags: Flags,
     /// Operating System Specific value #1
     pub _os_specific_1: [u8; 4],
     /// Direct block pointers
@@ -167,7 +167,7 @@ bitflags! {
 }
 
 bitflags! {
-    pub struct InodeFlags: u32 {
+    pub struct Flags: u32 {
         /// Secure deletion (not used)
         const SECURE_DEL = 0x00000001;
         /// Keep a copy of data when deleted (not used)
@@ -192,3 +192,20 @@ bitflags! {
         const JOURNAL_DATA = 0x00040000;
     }
 }
+
+/// Unknown entry type
+pub const UNKNOWN: u8 = 0;
+/// FIFO entry type
+pub const FIFO: u8 = 1;
+/// Character device entry type
+pub const CHAR_DEVICE: u8 = 2;
+/// Directory entry type
+pub const DIRECTORY: u8 = 3;
+/// Block device entry type
+pub const BLOCK_DEVICE: u8 = 4;
+/// Regular file entry type
+pub const FILE: u8 = 5;
+/// Symbolic link entry type
+pub const SYMLINK: u8 = 6;
+/// Unix socket entry type
+pub const SOCKET: u8 = 7;
