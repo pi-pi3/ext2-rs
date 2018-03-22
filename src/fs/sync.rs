@@ -1,7 +1,8 @@
 use core::fmt::{self, Debug};
 use core::nonzero::NonZero;
+use core::iter::Iterator;
 
-use alloc::Vec;
+use alloc::{String, Vec};
 use alloc::arc::Arc;
 
 use spin::{Mutex, MutexGuard};
@@ -40,6 +41,77 @@ impl<T> Clone for Synced<T> {
 impl<S: SectorSize, V: Volume<u8, S>> Synced<Ext2<S, V>> {
     pub fn new(volume: V) -> Result<Synced<Ext2<S, V>>, Error> {
         Ext2::new(volume).map(|inner| Synced::with_inner(inner))
+    }
+
+    pub fn find_inode(
+        &self,
+        abs_path: &[u8],
+    ) -> Result<(Inode<S, V>, Address<S>), Error> {
+        pub fn inner<'a, S, V, I>(
+            fs: &Synced<Ext2<S, V>>,
+            inode: (u32, Inode<S, V>, Address<S>),
+            mut path: I,
+            abs_path: &[u8],
+        ) -> Result<(Inode<S, V>, Address<S>), Error>
+        where
+            S: SectorSize,
+            V: Volume<u8, S>,
+            I: Iterator<Item = &'a [u8]>,
+        {
+            let name = match path.next() {
+                Some(name) => name,
+                None => return Ok((inode.1, inode.2)),
+            };
+
+            let mut dir = match inode.1.directory() {
+                Some(dir) => dir,
+                None => {
+                    return Err(Error::NotADirectory {
+                        inode: inode.0,
+                        name: String::from_utf8_lossy(abs_path).into_owned(),
+                    })
+                }
+            };
+
+            let num = match dir.find(|entry| {
+                entry.is_err() || entry.as_ref().unwrap().name == name
+            }) {
+                Some(Ok(entry)) => entry.inode,
+                Some(Err(err)) => return Err(err),
+                None => {
+                    return Err(Error::NotFound {
+                        name: String::from_utf8_lossy(abs_path).into_owned(),
+                    })
+                }
+            };
+
+            let inode = match fs.inode_nth(num) {
+                Some((inode, addr)) => (num as u32, inode, addr),
+                None => {
+                    return Err(Error::InodeNotFound {
+                        inode: inode.0 as u32,
+                    })
+                }
+            };
+
+            inner(fs, inode, path, abs_path)
+        }
+
+        if abs_path.len() == 0 || abs_path[0] != b'/' {
+            return Err(Error::NotAbsolute {
+                name: String::from_utf8_lossy(abs_path).into_owned(),
+            });
+        }
+
+        if abs_path == b"/" {
+            return Ok(self.root_inode());
+        }
+
+        let mut path = abs_path.split(|byte| *byte == b'/');
+        path.next();
+        let (root, addr) = self.root_inode();
+
+        inner(self, (2, root, addr), path, abs_path)
     }
 
     pub fn root_inode(&self) -> (Inode<S, V>, Address<S>) {
@@ -166,6 +238,29 @@ impl<S: SectorSize, V: Volume<u8, S>> Inode<S, V> {
         Ok(offset)
     }
 
+    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize, Error> {
+        let total_size = self.size();
+        let capacity = buf.capacity();
+        if capacity < total_size {
+            buf.reserve_exact(total_size - capacity);
+        }
+        unsafe {
+            buf.set_len(total_size);
+        }
+        let size = self.read(&mut buf[..]);
+        size.and_then(|size| {
+            unsafe {
+                buf.set_len(size);
+            }
+            Ok(size)
+        }).or_else(|err| {
+            unsafe {
+                buf.set_len(0);
+            }
+            Err(err)
+        })
+    }
+
     pub fn blocks(&self) -> InodeBlocks<S, V> {
         InodeBlocks {
             inode: self.clone(),
@@ -174,8 +269,7 @@ impl<S: SectorSize, V: Volume<u8, S>> Inode<S, V> {
     }
 
     pub fn directory(&self) -> Option<Directory<S, V>> {
-        use sys::inode::TypePerm;
-        if unsafe { self.inner.type_perm.contains(TypePerm::DIRECTORY) } {
+        if self.is_dir() {
             Some(Directory {
                 blocks: self.blocks(),
                 offset: 0,
@@ -188,6 +282,11 @@ impl<S: SectorSize, V: Volume<u8, S>> Inode<S, V> {
         } else {
             None
         }
+    }
+
+    pub fn is_dir(&self) -> bool {
+        use sys::inode::TypePerm;
+        unsafe { self.inner.type_perm.contains(TypePerm::DIRECTORY) }
     }
 
     pub fn block(&self, index: usize) -> Option<NonZero<u32>> {
@@ -584,5 +683,20 @@ mod tests {
 
         let (root, _) = fs.root_inode();
         walk(&fs, root, String::new());
+    }
+
+    #[test]
+    fn find() {
+        use std::str;
+        let file = RefCell::new(File::open("ext2.img").unwrap());
+        let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
+
+        let found = fs.find_inode(b"/home/funky/README.md");
+
+        assert!(found.is_ok());
+        let (inode, _) = found.unwrap();
+        let mut vec = Vec::new();
+        assert!(inode.read_to_end(&mut vec).is_ok());
+        println!("{}", str::from_utf8(&vec).unwrap());
     }
 }

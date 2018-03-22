@@ -1,5 +1,5 @@
 use core::fmt::{self, Display};
-use alloc::String;
+use alloc::{String, Vec};
 
 #[cfg(any(test, not(feature = "no_std")))]
 use std::io;
@@ -22,6 +22,19 @@ pub enum Error {
     BadBlockGroupCount {
         by_blocks: u32,
         by_inodes: u32,
+    },
+    InodeNotFound {
+        inode: u32,
+    },
+    NotADirectory {
+        inode: u32,
+        name: String,
+    },
+    NotAbsolute {
+        name: String,
+    },
+    NotFound {
+        name: String,
     },
     #[cfg(any(test, not(feature = "no_std")))]
     Io {
@@ -49,6 +62,19 @@ impl Display for Error {
                 by_blocks,
                 by_inodes,
             } => write!(f, "conflicting block group count data; by blocks: {}, by inodes: {}", by_blocks, by_inodes),
+            Error::InodeNotFound {
+                inode,
+            } => write!(f, "couldn't find inode no. {}", &inode),
+            Error::NotADirectory {
+                inode,
+                ref name,
+            } => write!(f, "inode no. {} at: {} is not a directory", inode, &name),
+            Error::NotAbsolute {
+                ref name,
+            } => write!(f, "{} is not an absolute path", &name),
+            Error::NotFound {
+                ref name,
+            } => write!(f, "couldn't find {}", &name),
             #[cfg(any(test, not(feature = "no_std")))]
             Error::Io {
                 ref inner,
