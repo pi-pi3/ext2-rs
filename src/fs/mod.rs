@@ -1,5 +1,4 @@
 use core::mem;
-use core::slice;
 use core::fmt::{self, Debug};
 use core::nonzero::NonZero;
 
@@ -12,7 +11,9 @@ use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
 use sys::inode::Inode as RawInode;
 
-struct Struct<T, S: SectorSize> {
+pub mod sync;
+
+pub(crate) struct Struct<T, S: SectorSize> {
     pub inner: T,
     pub offset: Address<S>,
 }
@@ -26,9 +27,10 @@ impl<T, S: SectorSize> From<(T, Address<S>)> for Struct<T, S> {
 
 /// Safe wrapper for raw sys structs
 pub struct Ext2<S: SectorSize, V: Volume<u8, S>> {
-    volume: V,
-    superblock: Struct<Superblock, S>,
-    block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
+    // TODO: should this have some different vis?
+    pub(crate) volume: V,
+    pub(crate) superblock: Struct<Superblock, S>,
+    pub(crate) block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
 impl<S: SectorSize, V: Volume<u8, S>> Ext2<S, V> {
@@ -162,9 +164,9 @@ impl<S: SectorSize, V: Volume<u8, S>> Ext2<S, V> {
         (self.superblock().rev_major, self.superblock().rev_minor)
     }
 
-    pub fn inode_size<'vol>(&'vol self) -> usize {
+    pub fn inode_size(&self) -> usize {
         if self.version().0 == 0 {
-            mem::size_of::<Inode<'vol, S, V>>()
+            mem::size_of::<RawInode>()
         } else {
             // note: inodes bigger than 128 are not supported
             self.superblock().inode_size as usize
@@ -494,7 +496,7 @@ pub struct Directory<
 impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
     for Directory<'vol, 'inode, S, V>
 {
-    type Item = Result<DirectoryEntry<'vol>, Error>;
+    type Item = Result<DirectoryEntry, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.is_none() || self.offset >= self.block_size {
@@ -520,8 +522,7 @@ impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
         let len = buffer[6];
         let ty = buffer[7];
 
-        let ptr = unsafe { buffer.as_ptr().add(8) };
-        let name = unsafe { slice::from_raw_parts(ptr, len as usize) };
+        let name = buffer[8..8 + len as usize].to_vec();
 
         self.offset += size as usize;
 
@@ -533,8 +534,9 @@ impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
     }
 }
 
-pub struct DirectoryEntry<'a> {
-    pub name: &'a [u8],
+#[derive(Clone)]
+pub struct DirectoryEntry {
+    pub name: Vec<u8>,
     pub inode: usize,
     pub ty: u8,
 }
@@ -695,7 +697,7 @@ mod tests {
                 for entry in dir {
                     assert!(entry.is_ok());
                     let entry = entry.unwrap();
-                    let entry_name = str::from_utf8(entry.name).unwrap_or("?");
+                    let entry_name = str::from_utf8(&entry.name).unwrap_or("?");
                     println!("{}/{} => {}", name, entry_name, entry.inode,);
                     if entry_name != "." && entry_name != ".." {
                         walk(
