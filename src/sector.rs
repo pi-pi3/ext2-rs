@@ -4,7 +4,7 @@ use core::ops::{Add, Sub};
 use core::fmt::{self, Debug, Display, LowerHex};
 use core::iter::Step;
 
-pub trait SectorSize: Clone + Copy + PartialEq + PartialOrd {
+pub trait SectorSize: Clone + Copy + PartialEq + PartialOrd + 'static {
     // log_sector_size = log_2(sector_size)
     const LOG_SIZE: u32;
     const SIZE: usize = 1 << Self::LOG_SIZE;

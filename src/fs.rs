@@ -220,7 +220,7 @@ impl<S: SectorSize, V: Volume<u8, S>> Debug for Ext2<S, V> {
     }
 }
 
-pub struct Inodes<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> {
+pub struct Inodes<'vol, S: SectorSize, V: 'vol + Volume<u8, S>> {
     fs: &'vol Ext2<S, V>,
     block_groups: &'vol [BlockGroupDescriptor],
     log_block_size: u32,
@@ -260,12 +260,12 @@ impl<'vol, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
 }
 
 #[derive(Debug, Clone)]
-pub struct Inode<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> {
+pub struct Inode<'vol, S: SectorSize, V: 'vol + Volume<u8, S>> {
     fs: &'vol Ext2<S, V>,
     inner: RawInode,
 }
 
-impl<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> Inode<'vol, S, V> {
+impl<'vol, S: SectorSize, V: 'vol + Volume<u8, S>> Inode<'vol, S, V> {
     pub fn new(fs: &'vol Ext2<S, V>, inner: RawInode) -> Inode<'vol, S, V> {
         Inode { fs, inner }
     }
@@ -442,7 +442,7 @@ impl<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> Inode<'vol, S, V> {
 pub struct InodeBlocks<
     'vol: 'inode,
     'inode,
-    S: 'vol + SectorSize,
+    S: SectorSize,
     V: 'vol + Volume<u8, S>,
 > {
     inode: &'inode Inode<'vol, S, V>,
@@ -482,7 +482,7 @@ impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
 pub struct Directory<
     'vol: 'inode,
     'inode,
-    S: 'vol + SectorSize,
+    S: SectorSize,
     V: 'vol + Volume<u8, S>,
 > {
     blocks: InodeBlocks<'vol, 'inode, S, V>,
