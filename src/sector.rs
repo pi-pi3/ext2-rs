@@ -4,7 +4,7 @@ use core::ops::{Add, Sub};
 use core::fmt::{self, Debug, Display, LowerHex};
 use core::iter::Step;
 
-pub trait Size: Clone + Copy + PartialOrd {
+pub trait SectorSize: Clone + Copy + PartialEq + PartialOrd {
     // log_sector_size = log_2(sector_size)
     const LOG_SIZE: u32;
     const SIZE: usize = 1 << Self::LOG_SIZE;
@@ -13,37 +13,37 @@ pub trait Size: Clone + Copy + PartialOrd {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size512;
-impl Size for Size512 {
+impl SectorSize for Size512 {
     const LOG_SIZE: u32 = 9;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size1024;
-impl Size for Size1024 {
+impl SectorSize for Size1024 {
     const LOG_SIZE: u32 = 10;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size2048;
-impl Size for Size2048 {
+impl SectorSize for Size2048 {
     const LOG_SIZE: u32 = 11;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Size4096;
-impl Size for Size4096 {
+impl SectorSize for Size4096 {
     const LOG_SIZE: u32 = 12;
 }
 
 /// Address in a physical sector
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Address<S: Size> {
+pub struct Address<S: SectorSize> {
     sector: u32,
     offset: u32,
     _phantom: PhantomData<S>,
 }
 
-impl<S: Size> Address<S> {
+impl<S: SectorSize> Address<S> {
     pub unsafe fn new_unchecked(sector: u32, offset: u32) -> Address<S> {
         assert!((offset as usize) < S::SIZE, "offset out of sector bounds");
         let _phantom = PhantomData;
@@ -96,7 +96,7 @@ impl<S: Size> Address<S> {
     }
 }
 
-impl<S: Size> Step for Address<S> {
+impl<S: SectorSize> Step for Address<S> {
     fn steps_between(start: &Self, end: &Self) -> Option<usize> {
         if end.sector >= start.sector {
             Some(end.sector as usize - start.sector as usize)
@@ -128,7 +128,7 @@ impl<S: Size> Step for Address<S> {
     }
 }
 
-impl<S: Size> Debug for Address<S> {
+impl<S: SectorSize> Debug for Address<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let name = format!("Address<{}>", S::SIZE);
         f.debug_struct(&name)
@@ -138,19 +138,19 @@ impl<S: Size> Debug for Address<S> {
     }
 }
 
-impl<S: Size> Display for Address<S> {
+impl<S: SectorSize> Display for Address<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.sector, self.offset)
     }
 }
 
-impl<S: Size> LowerHex for Address<S> {
+impl<S: SectorSize> LowerHex for Address<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:x}:{:x}", self.sector, self.offset)
     }
 }
 
-impl<S: Size> From<u64> for Address<S> {
+impl<S: SectorSize> From<u64> for Address<S> {
     fn from(idx: u64) -> Address<S> {
         let sector = idx >> S::LOG_SIZE;
         let offset = idx & S::OFFSET_MASK as u64;
@@ -158,7 +158,7 @@ impl<S: Size> From<u64> for Address<S> {
     }
 }
 
-impl<S: Size> From<usize> for Address<S> {
+impl<S: SectorSize> From<usize> for Address<S> {
     fn from(idx: usize) -> Address<S> {
         let sector = idx >> S::LOG_SIZE;
         let offset = idx & S::OFFSET_MASK as usize;
@@ -166,7 +166,7 @@ impl<S: Size> From<usize> for Address<S> {
     }
 }
 
-impl<S: Size> Add for Address<S> {
+impl<S: SectorSize> Add for Address<S> {
     type Output = Address<S>;
     fn add(self, rhs: Address<S>) -> Address<S> {
         Address::new(
@@ -176,7 +176,7 @@ impl<S: Size> Add for Address<S> {
     }
 }
 
-impl<S: Size> Sub for Address<S> {
+impl<S: SectorSize> Sub for Address<S> {
     type Output = Address<S>;
     fn sub(self, rhs: Address<S>) -> Address<S> {
         Address::new(

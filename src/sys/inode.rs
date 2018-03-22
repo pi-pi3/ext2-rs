@@ -2,7 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
-use sector::{Address, Size};
+use sector::{Address, SectorSize};
 use volume::Volume;
 
 /// An inode is a structure on the disk that represents a file, directory,
@@ -97,7 +97,7 @@ impl Debug for Inode {
 }
 
 impl Inode {
-    pub unsafe fn find_inode<S: Size, V: Volume<u8, Address<S>>>(
+    pub unsafe fn find_inode<S: SectorSize, V: Volume<u8, S>>(
         haystack: &V,
         offset: Address<S>,
         size: usize,

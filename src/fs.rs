@@ -6,18 +6,18 @@ use core::nonzero::NonZero;
 use alloc::Vec;
 
 use error::Error;
-use sector::{Address, Size};
+use sector::{Address, SectorSize};
 use volume::{Volume, VolumeSlice};
 use sys::superblock::Superblock;
 use sys::block_group::BlockGroupDescriptor;
 use sys::inode::Inode as RawInode;
 
-struct Struct<T, S: Size> {
+struct Struct<T, S: SectorSize> {
     pub inner: T,
     pub offset: Address<S>,
 }
 
-impl<T, S: Size> From<(T, Address<S>)> for Struct<T, S> {
+impl<T, S: SectorSize> From<(T, Address<S>)> for Struct<T, S> {
     #[inline]
     fn from((inner, offset): (T, Address<S>)) -> Struct<T, S> {
         Struct { inner, offset }
@@ -25,13 +25,13 @@ impl<T, S: Size> From<(T, Address<S>)> for Struct<T, S> {
 }
 
 /// Safe wrapper for raw sys structs
-pub struct Ext2<S: Size, V: Volume<u8, Address<S>>> {
+pub struct Ext2<S: SectorSize, V: Volume<u8, S>> {
     volume: V,
     superblock: Struct<Superblock, S>,
     block_groups: Struct<Vec<BlockGroupDescriptor>, S>,
 }
 
-impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
+impl<S: SectorSize, V: Volume<u8, S>> Ext2<S, V> {
     pub fn new(volume: V) -> Result<Ext2<S, V>, Error> {
         let superblock = unsafe { Struct::from(Superblock::find(&volume)?) };
         let block_groups_offset = Address::with_block_size(
@@ -87,10 +87,10 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         Ok(())
     }
 
-    pub fn read_inode<'a>(
-        &'a self,
+    pub fn read_inode<'vol>(
+        &'vol self,
         buf: &mut [u8],
-        inode: &Inode<'a, S, V>,
+        inode: &Inode<'vol, S, V>,
     ) -> Result<usize, Error> {
         let total_size = inode.size();
         let block_size = self.block_size();
@@ -113,30 +113,30 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         Ok(offset)
     }
 
-    pub fn write_inode<'a>(
-        &'a self,
-        _inode: &(Inode<'a, S, V>, Address<S>),
+    pub fn write_inode<'vol>(
+        &'vol self,
+        _inode: &(Inode<'vol, S, V>, Address<S>),
         _buf: &[u8],
     ) -> Result<usize, Error> {
         unimplemented!()
     }
 
-    pub fn root_inode<'a>(&'a self) -> (Inode<'a, S, V>, Address<S>) {
+    pub fn root_inode<'vol>(&'vol self) -> (Inode<'vol, S, V>, Address<S>) {
         self.inode_nth(2).unwrap()
     }
 
-    pub fn inode_nth<'a>(
-        &'a self,
+    pub fn inode_nth<'vol>(
+        &'vol self,
         index: usize,
-    ) -> Option<(Inode<'a, S, V>, Address<S>)> {
+    ) -> Option<(Inode<'vol, S, V>, Address<S>)> {
         self.inodes_nth(index).next()
     }
 
-    pub fn inodes<'a>(&'a self) -> Inodes<'a, S, V> {
+    pub fn inodes<'vol>(&'vol self) -> Inodes<'vol, S, V> {
         self.inodes_nth(1)
     }
 
-    pub fn inodes_nth<'a>(&'a self, index: usize) -> Inodes<'a, S, V> {
+    pub fn inodes_nth<'vol>(&'vol self, index: usize) -> Inodes<'vol, S, V> {
         assert!(index > 0, "inodes are 1-indexed");
         Inodes {
             fs: self,
@@ -162,9 +162,9 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
         (self.superblock().rev_major, self.superblock().rev_minor)
     }
 
-    pub fn inode_size<'a>(&'a self) -> usize {
+    pub fn inode_size<'vol>(&'vol self) -> usize {
         if self.version().0 == 0 {
-            mem::size_of::<Inode<'a, S, V>>()
+            mem::size_of::<Inode<'vol, S, V>>()
         } else {
             // note: inodes bigger than 128 are not supported
             self.superblock().inode_size as usize
@@ -214,15 +214,15 @@ impl<S: Size, V: Volume<u8, Address<S>>> Ext2<S, V> {
     }
 }
 
-impl<S: Size, V: Volume<u8, Address<S>>> Debug for Ext2<S, V> {
+impl<S: SectorSize, V: Volume<u8, S>> Debug for Ext2<S, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Ext2<{}>", S::SIZE)
     }
 }
 
-pub struct Inodes<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
-    fs: &'a Ext2<S, V>,
-    block_groups: &'a [BlockGroupDescriptor],
+pub struct Inodes<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> {
+    fs: &'vol Ext2<S, V>,
+    block_groups: &'vol [BlockGroupDescriptor],
     log_block_size: u32,
     inode_size: usize,
     inodes_per_group: usize,
@@ -230,10 +230,10 @@ pub struct Inodes<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
     index: usize,
 }
 
-impl<'a, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
-    for Inodes<'a, S, V>
+impl<'vol, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
+    for Inodes<'vol, S, V>
 {
-    type Item = (Inode<'a, S, V>, Address<S>);
+    type Item = (Inode<'vol, S, V>, Address<S>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.inodes_count {
@@ -260,24 +260,26 @@ impl<'a, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
 }
 
 #[derive(Debug, Clone)]
-pub struct Inode<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
-    fs: &'a Ext2<S, V>,
+pub struct Inode<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> {
+    fs: &'vol Ext2<S, V>,
     inner: RawInode,
 }
 
-impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
-    pub fn new(fs: &'a Ext2<S, V>, inner: RawInode) -> Inode<'a, S, V> {
+impl<'vol, S: 'vol + SectorSize, V: 'vol + Volume<u8, S>> Inode<'vol, S, V> {
+    pub fn new(fs: &'vol Ext2<S, V>, inner: RawInode) -> Inode<'vol, S, V> {
         Inode { fs, inner }
     }
 
-    pub fn blocks<'b>(&'b self) -> InodeBlocks<'a, 'b, S, V> {
+    pub fn blocks<'inode>(&'inode self) -> InodeBlocks<'vol, 'inode, S, V> {
         InodeBlocks {
             inode: self,
             index: 0,
         }
     }
 
-    pub fn directory<'b>(&'b self) -> Option<Directory<'a, 'b, S, V>> {
+    pub fn directory<'inode>(
+        &'inode self,
+    ) -> Option<Directory<'vol, 'inode, S, V>> {
         use sys::inode::TypePerm;
         if unsafe { self.inner.type_perm.contains(TypePerm::DIRECTORY) } {
             Some(Directory {
@@ -313,7 +315,7 @@ impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
         //     - that's n/4 blocks with n/4 pointers each = (n/4)^2
         // number of blocks in triply table: (block_size/4)^3
 
-        fn block_index<S: Size, V: Volume<u8, Address<S>>>(
+        fn block_index<S: SectorSize, V: Volume<u8, S>>(
             volume: &V,
             block: u32,
             index: usize,
@@ -437,16 +439,20 @@ impl<'a, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> Inode<'a, S, V> {
     }
 }
 
-pub struct InodeBlocks<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>>
-{
-    inode: &'b Inode<'a, S, V>,
+pub struct InodeBlocks<
+    'vol: 'inode,
+    'inode,
+    S: 'vol + SectorSize,
+    V: 'vol + Volume<u8, S>,
+> {
+    inode: &'inode Inode<'vol, S, V>,
     index: usize,
 }
 
-impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
-    for InodeBlocks<'a, 'b, S, V>
+impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
+    for InodeBlocks<'vol, 'inode, S, V>
 {
-    type Item = Result<(VolumeSlice<'a, u8, Address<S>>, Address<S>), Error>;
+    type Item = Result<(VolumeSlice<'vol, u8, S>, Address<S>), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let block = self.inode.try_block(self.index);
@@ -473,17 +479,22 @@ impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
     }
 }
 
-pub struct Directory<'a: 'b, 'b, S: 'a + Size, V: 'a + Volume<u8, Address<S>>> {
-    blocks: InodeBlocks<'a, 'b, S, V>,
+pub struct Directory<
+    'vol: 'inode,
+    'inode,
+    S: 'vol + SectorSize,
+    V: 'vol + Volume<u8, S>,
+> {
+    blocks: InodeBlocks<'vol, 'inode, S, V>,
     offset: usize,
-    buffer: Option<VolumeSlice<'a, u8, Address<S>>>,
+    buffer: Option<VolumeSlice<'vol, u8, S>>,
     block_size: usize,
 }
 
-impl<'a, 'b, S: Size, V: 'a + Volume<u8, Address<S>>> Iterator
-    for Directory<'a, 'b, S, V>
+impl<'vol, 'inode, S: SectorSize, V: 'vol + Volume<u8, S>> Iterator
+    for Directory<'vol, 'inode, S, V>
 {
-    type Item = Result<DirectoryEntry<'a>, Error>;
+    type Item = Result<DirectoryEntry<'vol>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.is_none() || self.offset >= self.block_size {
@@ -533,7 +544,7 @@ mod tests {
     use std::fs::File;
     use std::cell::RefCell;
 
-    use sector::{Address, Size, Size512};
+    use sector::{Address, SectorSize, Size512};
     use volume::Volume;
 
     use super::{Ext2, Inode};
@@ -675,9 +686,9 @@ mod tests {
     fn walkdir() {
         use std::str;
 
-        fn walk<'a, S: Size, V: Volume<u8, Address<S>>>(
-            fs: &'a Ext2<S, V>,
-            inode: Inode<'a, S, V>,
+        fn walk<'vol, S: SectorSize, V: Volume<u8, S>>(
+            fs: &'vol Ext2<S, V>,
+            inode: Inode<'vol, S, V>,
             name: String,
         ) {
             inode.directory().map(|dir| {

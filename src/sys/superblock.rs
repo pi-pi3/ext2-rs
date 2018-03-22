@@ -2,7 +2,7 @@ use core::mem;
 use core::fmt::{self, Debug};
 
 use error::Error;
-use sector::{Address, Size};
+use sector::{Address, SectorSize};
 use volume::Volume;
 
 /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a
@@ -106,7 +106,7 @@ pub struct Superblock {
 
     /// First non-reserved inode in file system.
     pub first_inode: u32,
-    /// Size of each inode structure in bytes.
+    /// SectorSize of each inode structure in bytes.
     pub inode_size: u16,
     /// Block group that this superblock is part of (if backup copy)
     pub block_group: u16,
@@ -195,7 +195,7 @@ impl Debug for Superblock {
 }
 
 impl Superblock {
-    pub unsafe fn find<S: Size, V: Volume<u8, Address<S>>>(
+    pub unsafe fn find<S: SectorSize, V: Volume<u8, S>>(
         haystack: &V,
     ) -> Result<(Superblock, Address<S>), Error> {
         let offset = Address::from(1024_usize);

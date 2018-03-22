@@ -4,7 +4,7 @@ use core::fmt::{self, Debug};
 use alloc::Vec;
 
 use error::Error;
-use sector::{Address, Size};
+use sector::{Address, SectorSize};
 use volume::Volume;
 
 /// The Block Group Descriptor Table contains a descriptor for each block group
@@ -52,7 +52,7 @@ impl Debug for BlockGroupDescriptor {
 }
 
 impl BlockGroupDescriptor {
-    pub unsafe fn find_descriptor<S: Size, V: Volume<u8, Address<S>>>(
+    pub unsafe fn find_descriptor<S: SectorSize, V: Volume<u8, S>>(
         haystack: &V,
         offset: Address<S>,
     ) -> Result<(BlockGroupDescriptor, Address<S>), Error> {
@@ -73,7 +73,7 @@ impl BlockGroupDescriptor {
         Ok(descr)
     }
 
-    pub unsafe fn find_descriptor_table<S: Size, V: Volume<u8, Address<S>>>(
+    pub unsafe fn find_descriptor_table<S: SectorSize, V: Volume<u8, S>>(
         haystack: &V,
         offset: Address<S>,
         count: usize,
