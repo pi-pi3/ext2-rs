@@ -1,5 +1,5 @@
 use core::fmt::{self, Display};
-use alloc::{String, Vec};
+use alloc::String;
 
 #[cfg(any(test, not(feature = "no_std")))]
 use std::io;

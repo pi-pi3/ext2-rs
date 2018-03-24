@@ -6,6 +6,7 @@ use alloc::{String, Vec};
 use alloc::arc::Arc;
 
 use spin::{Mutex, MutexGuard};
+use genfs::*;
 
 use error::Error;
 use sector::{Address, SectorSize};
@@ -43,82 +44,11 @@ impl<S: SectorSize, V: Volume<u8, S>> Synced<Ext2<S, V>> {
         Ext2::new(volume).map(|inner| Synced::with_inner(inner))
     }
 
-    pub fn find_inode(
-        &self,
-        abs_path: &[u8],
-    ) -> Result<(Inode<S, V>, Address<S>), Error> {
-        pub fn inner<'a, S, V, I>(
-            fs: &Synced<Ext2<S, V>>,
-            inode: (u32, Inode<S, V>, Address<S>),
-            mut path: I,
-            abs_path: &[u8],
-        ) -> Result<(Inode<S, V>, Address<S>), Error>
-        where
-            S: SectorSize,
-            V: Volume<u8, S>,
-            I: Iterator<Item = &'a [u8]>,
-        {
-            let name = match path.next() {
-                Some(name) => name,
-                None => return Ok((inode.1, inode.2)),
-            };
-
-            let mut dir = match inode.1.directory() {
-                Some(dir) => dir,
-                None => {
-                    return Err(Error::NotADirectory {
-                        inode: inode.0,
-                        name: String::from_utf8_lossy(abs_path).into_owned(),
-                    })
-                }
-            };
-
-            let num = match dir.find(|entry| {
-                entry.is_err() || entry.as_ref().unwrap().name == name
-            }) {
-                Some(Ok(entry)) => entry.inode,
-                Some(Err(err)) => return Err(err),
-                None => {
-                    return Err(Error::NotFound {
-                        name: String::from_utf8_lossy(abs_path).into_owned(),
-                    })
-                }
-            };
-
-            let inode = match fs.inode_nth(num) {
-                Some((inode, addr)) => (num as u32, inode, addr),
-                None => {
-                    return Err(Error::InodeNotFound {
-                        inode: inode.0 as u32,
-                    })
-                }
-            };
-
-            inner(fs, inode, path, abs_path)
-        }
-
-        if abs_path.len() == 0 || abs_path[0] != b'/' {
-            return Err(Error::NotAbsolute {
-                name: String::from_utf8_lossy(abs_path).into_owned(),
-            });
-        }
-
-        if abs_path == b"/" {
-            return Ok(self.root_inode());
-        }
-
-        let mut path = abs_path.split(|byte| *byte == b'/');
-        path.next();
-        let (root, addr) = self.root_inode();
-
-        inner(self, (2, root, addr), path, abs_path)
-    }
-
-    pub fn root_inode(&self) -> (Inode<S, V>, Address<S>) {
+    pub fn root_inode(&self) -> Inode<S, V> {
         self.inode_nth(2).unwrap()
     }
 
-    pub fn inode_nth(&self, index: usize) -> Option<(Inode<S, V>, Address<S>)> {
+    pub fn inode_nth(&self, index: usize) -> Option<Inode<S, V>> {
         self.inodes_nth(index).next()
     }
 
@@ -148,6 +78,172 @@ impl<S: SectorSize, V: Volume<u8, S>> Synced<Ext2<S, V>> {
     }
 }
 
+impl<S: SectorSize, V: Volume<u8, S>> Fs for Synced<Ext2<S, V>> {
+    type Path = [u8];
+    type PathOwned = Vec<u8>;
+    type File = Inode<S, V>;
+    type Dir = Directory<S, V>;
+    type DirEntry = DirectoryEntry;
+    type Metadata = (); // TODO
+    type Permissions = (); // TODO
+    type Error = Error;
+
+    fn open(
+        &self,
+        abs_path: &Self::Path,
+        _options: &OpenOptions<Self::Permissions>,
+    ) -> Result<Self::File, Self::Error> {
+        fn inner<'a, S, V, I>(
+            fs: &Synced<Ext2<S, V>>,
+            inode: Inode<S, V>,
+            mut path: I,
+            abs_path: &[u8],
+        ) -> Result<Inode<S, V>, Error>
+        where
+            S: SectorSize,
+            V: Volume<u8, S>,
+            I: Iterator<Item = &'a [u8]>,
+        {
+            let name = match path.next() {
+                Some(name) => name,
+                None => return Ok(inode),
+            };
+
+            let mut dir =
+                inode.directory().ok_or_else(|| Error::NotADirectory {
+                    inode: inode.num,
+                    name: String::from_utf8_lossy(abs_path).into_owned(),
+                })?;
+
+            let entry = dir.find(|entry| {
+                entry.is_err() || entry.as_ref().unwrap().name == name
+            }).ok_or_else(|| Error::NotFound {
+                name: String::from_utf8_lossy(abs_path).into_owned(),
+            })??;
+
+            let inode = fs.inode_nth(entry.inode)
+                .ok_or(Error::InodeNotFound { inode: inode.num })?;
+
+            inner(fs, inode, path, abs_path)
+        }
+
+        if abs_path.len() == 0 || abs_path[0] != b'/' {
+            return Err(Error::NotAbsolute {
+                name: String::from_utf8_lossy(abs_path).into_owned(),
+            });
+        }
+
+        if abs_path == b"/" {
+            return Ok(self.root_inode());
+        }
+
+        let mut path = abs_path.split(|byte| *byte == b'/');
+        path.next();
+        let root = self.root_inode();
+
+        inner(self, root, path, abs_path)
+    }
+
+    fn remove_file(&mut self, _path: &Self::Path) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn metadata(
+        &self,
+        _path: &Self::Path,
+    ) -> Result<Self::Metadata, Self::Error> {
+        unimplemented!()
+    }
+
+    fn symlink_metadata(
+        &self,
+        _path: &Self::Path,
+    ) -> Result<Self::Metadata, Self::Error> {
+        unimplemented!()
+    }
+
+    fn rename(
+        &mut self,
+        _from: &Self::Path,
+        _to: &Self::Path,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn copy(
+        &mut self,
+        _from: &Self::Path,
+        _to: &Self::Path,
+    ) -> Result<u64, Self::Error> {
+        unimplemented!()
+    }
+
+    fn hard_link(
+        &mut self,
+        _src: &Self::Path,
+        _dst: &Self::Path,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn symlink(
+        &mut self,
+        _src: &Self::Path,
+        _dst: &Self::Path,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn read_link(
+        &self,
+        _path: &Self::Path,
+    ) -> Result<Self::PathOwned, Self::Error> {
+        unimplemented!()
+    }
+
+    fn canonicalize(
+        &self,
+        _path: &Self::Path,
+    ) -> Result<Self::PathOwned, Self::Error> {
+        unimplemented!()
+    }
+
+    fn create_dir(
+        &mut self,
+        _path: &Self::Path,
+        _options: &DirOptions<Self::Permissions>,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn remove_dir(&mut self, _path: &Self::Path) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn remove_dir_all(
+        &mut self,
+        _path: &Self::Path,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn read_dir(&self, path: &Self::Path) -> Result<Self::Dir, Self::Error> {
+        let inode = self.open(path, OpenOptions::new().read(true))?;
+        inode.directory().ok_or(Error::NotADirectory {
+            inode: inode.num,
+            name: String::from_utf8_lossy(path).into_owned(),
+        })
+    }
+
+    fn set_permissions(
+        &mut self,
+        _path: &Self::Path,
+        _perm: Self::Permissions,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+}
+
 impl<S: SectorSize, V: Volume<u8, S>> Debug for Synced<Ext2<S, V>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Synced<Ext2<{}>>", S::SIZE)
@@ -165,7 +261,7 @@ pub struct Inodes<S: SectorSize, V: Volume<u8, S>> {
 }
 
 impl<S: SectorSize, V: Volume<u8, S>> Iterator for Inodes<S, V> {
-    type Item = (Inode<S, V>, Address<S>);
+    type Item = Inode<S, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.inodes_count {
@@ -186,7 +282,14 @@ impl<S: SectorSize, V: Volume<u8, S>> Iterator for Inodes<S, V> {
             let raw = unsafe {
                 RawInode::find_inode(&fs.volume, offset, self.inode_size).ok()
             };
-            raw.map(|(raw, offset)| (Inode::new(self.fs.clone(), raw), offset))
+            raw.map(|(raw, offset)| {
+                Inode::new(
+                    self.fs.clone(),
+                    raw,
+                    offset,
+                    (self.index - 1) as u32,
+                )
+            })
         } else {
             None
         }
@@ -197,6 +300,8 @@ impl<S: SectorSize, V: Volume<u8, S>> Iterator for Inodes<S, V> {
 pub struct Inode<S: SectorSize, V: Volume<u8, S>> {
     fs: Synced<Ext2<S, V>>,
     inner: RawInode,
+    addr: Address<S>,
+    num: u32,
 }
 
 impl<S: SectorSize, V: Volume<u8, S>> Clone for Inode<S, V> {
@@ -204,38 +309,25 @@ impl<S: SectorSize, V: Volume<u8, S>> Clone for Inode<S, V> {
         Inode {
             fs: self.fs.clone(),
             inner: self.inner,
+            addr: self.addr,
+            num: self.num,
         }
     }
 }
 
 impl<S: SectorSize, V: Volume<u8, S>> Inode<S, V> {
-    pub fn new(fs: Synced<Ext2<S, V>>, inner: RawInode) -> Inode<S, V> {
-        Inode { fs, inner }
-    }
-
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize, Error> {
-        let total_size = self.size();
-        let block_size = {
-            let fs = self.fs.inner();
-            fs.block_size()
-        };
-        let mut offset = 0;
-
-        for block in self.blocks() {
-            match block {
-                Ok((data, _)) => {
-                    let data_size = block_size
-                        .min(total_size - offset)
-                        .min(buf.len() - offset);
-                    let end = offset + data_size;
-                    buf[offset..end].copy_from_slice(&data[..data_size]);
-                    offset += data_size;
-                }
-                Err(err) => return Err(err.into()),
-            }
+    pub fn new(
+        fs: Synced<Ext2<S, V>>,
+        inner: RawInode,
+        addr: Address<S>,
+        num: u32,
+    ) -> Inode<S, V> {
+        Inode {
+            fs,
+            inner,
+            addr,
+            num,
         }
-
-        Ok(offset)
     }
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize, Error> {
@@ -437,6 +529,47 @@ impl<S: SectorSize, V: Volume<u8, S>> Inode<S, V> {
     }
 }
 
+impl<S: SectorSize, V: Volume<u8, S>> File for Inode<S, V> {
+    type Error = Error;
+
+    fn read(&self, buf: &mut [u8]) -> Result<usize, Error> {
+        let total_size = self.size();
+        let block_size = {
+            let fs = self.fs.inner();
+            fs.block_size()
+        };
+        let mut offset = 0;
+
+        for block in self.blocks() {
+            match block {
+                Ok((data, _)) => {
+                    let data_size = block_size
+                        .min(total_size - offset)
+                        .min(buf.len() - offset);
+                    let end = offset + data_size;
+                    buf[offset..end].copy_from_slice(&data[..data_size]);
+                    offset += data_size;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+
+        Ok(offset)
+    }
+
+    fn write(&mut self, _buf: &[u8]) -> Result<usize, Self::Error> {
+        unimplemented!()
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn seek(&mut self, _pos: SeekFrom) -> Result<u64, Self::Error> {
+        unimplemented!()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InodeBlocks<S: SectorSize, V: Volume<u8, S>> {
     inode: Inode<S, V>,
@@ -476,6 +609,11 @@ pub struct Directory<S: SectorSize, V: Volume<u8, S>> {
     offset: usize,
     buffer: Option<Vec<u8>>,
     block_size: usize,
+}
+
+impl<S: SectorSize, V: Volume<u8, S>> Dir<DirectoryEntry, Error>
+    for Directory<S, V>
+{
 }
 
 impl<S: SectorSize, V: Volume<u8, S>> Iterator for Directory<S, V> {
@@ -524,10 +662,36 @@ pub struct DirectoryEntry {
     pub ty: u8,
 }
 
+impl DirEntry for DirectoryEntry {
+    type Path = [u8];
+    type PathOwned = Vec<u8>;
+    type Metadata = (); // TODO
+    type FileType = u8; // TODO: enum FileType
+    type Error = Error;
+
+    fn path(&self) -> Self::PathOwned {
+        unimplemented!()
+    }
+
+    fn metadata(&self) -> Result<Self::Metadata, Self::Error> {
+        unimplemented!()
+    }
+
+    fn file_type(&self) -> Result<Self::FileType, Self::Error> {
+        Ok(self.ty)
+    }
+
+    fn file_name(&self) -> &Self::Path {
+        &self.name
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
     use std::cell::RefCell;
+
+    use genfs::{File as GenFile, Fs, OpenOptions};
 
     use sector::{SectorSize, Size512};
     use volume::Volume;
@@ -566,7 +730,7 @@ mod tests {
 
         let fs = fs.unwrap();
 
-        let inodes = fs.inodes().filter(|inode| inode.0.in_use());
+        let inodes = fs.inodes().filter(|inode| inode.in_use());
         for inode in inodes {
             println!("{:?}", inode);
         }
@@ -579,12 +743,12 @@ mod tests {
         let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
 
         let inodes = fs.inodes().filter(|inode| {
-            inode.0.in_use() && inode.0.uid() == 1000 && inode.0.size() < 1024
+            inode.in_use() && inode.uid() == 1000 && inode.size() < 1024
         });
         for inode in inodes {
-            println!("{:?}", inode.0);
-            let size = inode.0.size();
-            for block in inode.0.blocks() {
+            println!("{:?}", inode);
+            let size = inode.size();
+            for block in inode.blocks() {
                 let (data, _) = block.unwrap();
                 assert_eq!(data.len(), {
                     let fs = fs.inner();
@@ -603,9 +767,9 @@ mod tests {
         let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
 
         let inodes = fs.inodes().filter(|inode| {
-            inode.0.in_use() && inode.0.uid() == 1000 && inode.0.size() < 1024
+            inode.in_use() && inode.uid() == 1000 && inode.size() < 1024
         });
-        for (inode, _) in inodes {
+        for inode in inodes {
             let mut buf = Vec::with_capacity(inode.size());
             unsafe {
                 buf.set_len(inode.size());
@@ -626,10 +790,9 @@ mod tests {
         let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
 
         let inodes = fs.inodes().filter(|inode| {
-            inode.0.in_use() && inode.0.uid() == 1000
-                && inode.0.size() == 537600
+            inode.in_use() && inode.uid() == 1000 && inode.size() == 537600
         });
-        for (inode, _) in inodes {
+        for inode in inodes {
             let mut buf = Vec::with_capacity(inode.size());
             unsafe {
                 buf.set_len(inode.size());
@@ -670,7 +833,7 @@ mod tests {
                     if entry_name != "." && entry_name != ".." {
                         walk(
                             fs,
-                            fs.inode_nth(entry.inode).unwrap().0,
+                            fs.inode_nth(entry.inode).unwrap(),
                             format!("{}/{}", name, entry_name),
                         );
                     }
@@ -681,7 +844,7 @@ mod tests {
         let file = RefCell::new(File::open("ext2.img").unwrap());
         let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
 
-        let (root, _) = fs.root_inode();
+        let root = fs.root_inode();
         walk(&fs, root, String::new());
     }
 
@@ -691,10 +854,10 @@ mod tests {
         let file = RefCell::new(File::open("ext2.img").unwrap());
         let fs = Synced::<Ext2<Size512, _>>::new(file).unwrap();
 
-        let found = fs.find_inode(b"/home/funky/README.md");
+        let found = fs.open(b"/home/funky/README.md", &OpenOptions::new());
 
         assert!(found.is_ok());
-        let (inode, _) = found.unwrap();
+        let inode = found.unwrap();
         let mut vec = Vec::new();
         assert!(inode.read_to_end(&mut vec).is_ok());
         println!("{}", str::from_utf8(&vec).unwrap());

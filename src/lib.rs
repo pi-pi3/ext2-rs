@@ -12,6 +12,7 @@
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
+extern crate genfs;
 extern crate spin;
 
 #[cfg(any(test, not(feature = "no_std")))]
